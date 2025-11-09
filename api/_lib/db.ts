@@ -8,8 +8,7 @@ export type BookmarkRecord = {
   category?: string;
   description?: string;
   visible: boolean;
-  createdAt: string;
-  updatedAt: string;
+  weight: number;
 };
 
 type BookmarkInput = {
@@ -212,7 +211,10 @@ export async function listBookmarks(): Promise<BookmarkRecord[]> {
 
 export async function createBookmark(data: BookmarkInput): Promise<BookmarkRecord> {
   const bookmarks = await loadBookmarksFresh();
-  const now = new Date().toISOString();
+  let nextWeight = 1;
+  if (bookmarks.length > 0) {
+    nextWeight = Math.max(...bookmarks.map((item) => item.weight ?? 0)) + 1;
+  }
   const bookmark: BookmarkRecord = {
     id: randomUUID(),
     title: data.title,
@@ -220,8 +222,7 @@ export async function createBookmark(data: BookmarkInput): Promise<BookmarkRecor
     category: data.category,
     description: data.description,
     visible: data.visible,
-    createdAt: now,
-    updatedAt: now
+    weight: nextWeight
   };
   bookmarks.unshift(bookmark);
   await saveBookmarks(bookmarks);
@@ -236,17 +237,20 @@ export async function reorderBookmarks(order: string[]): Promise<BookmarkRecord[
   });
 
   const reordered: BookmarkRecord[] = [];
+  let weight = 1;
   order.forEach((id) => {
     const record = map.get(id);
     if (record) {
-      reordered.push(record);
+      reordered.push({ ...record, weight });
       map.delete(id);
+      weight += 1;
     }
   });
 
   bookmarks.forEach((bookmark) => {
     if (map.has(bookmark.id)) {
-      reordered.push(bookmark);
+      reordered.push({ ...bookmark, weight });
+      weight += 1;
       map.delete(bookmark.id);
     }
   });
@@ -271,8 +275,7 @@ export async function updateBookmark(
     url: data.url,
     category: data.category,
     description: data.description,
-    visible: data.visible,
-    updatedAt: new Date().toISOString()
+    visible: data.visible
   };
   bookmarks[index] = updated;
   await saveBookmarks(bookmarks);

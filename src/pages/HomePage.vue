@@ -8,8 +8,7 @@ type Bookmark = {
   url: string;
   category?: string;
   description?: string;
-  createdAt: string;
-  updatedAt?: string;
+  weight?: number;
   visible?: boolean;
 };
 
@@ -310,19 +309,21 @@ function normalizeCategory(bookmark: Bookmark) {
 const keywordFiltered = computed(() => {
   const keyword = search.value.trim().toLowerCase();
   if (!keyword) {
-    return bookmarks.value;
+    return [...bookmarks.value].sort((a, b) => (a.weight ?? 0) - (b.weight ?? 0));
   }
-  return bookmarks.value.filter((item) => {
-    const haystack = [
-      item.title,
-      item.url,
-      item.category ?? '',
-      item.description ?? ''
-    ]
-      .join(' ')
-      .toLowerCase();
-    return haystack.includes(keyword);
-  });
+  return bookmarks.value
+    .filter((item) => {
+      const haystack = [
+        item.title,
+        item.url,
+        item.category ?? '',
+        item.description ?? ''
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(keyword);
+    })
+    .sort((a, b) => (a.weight ?? 0) - (b.weight ?? 0));
 });
 
 const visibilityFiltered = computed(() => {
@@ -420,7 +421,12 @@ async function loadBookmarks() {
   loading.value = true;
   error.value = null;
   try {
-    const response = await fetch(endpoint);
+    const response = await fetch(`${endpoint}?t=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-store'
+      }
+    });
     if (!response.ok) {
       if (response.status === 304) {
         return;
@@ -924,9 +930,7 @@ function openBookmark(bookmark: Bookmark) {
               <p v-if="bookmark.description" class="card__description">{{ bookmark.description }}</p>
               <p class="card__url">{{ bookmark.url }}</p>
               <footer class="card__footer">
-                <span class="card__time">
-                  更新于 {{ new Date(bookmark.updatedAt ?? bookmark.createdAt).toLocaleString() }}
-                </span>
+                <span class="card__time">权重：{{ bookmark.weight ?? 0 }}</span>
                 <div v-if="isAuthenticated" class="card__buttons">
                   <button class="button button--ghost" @click.stop="startEdit(bookmark)">编辑</button>
                   <button class="button button--ghost-alt" @click.stop="toggleVisibility(bookmark)">
@@ -979,9 +983,7 @@ function openBookmark(bookmark: Bookmark) {
             <p v-if="bookmark.description" class="card__description">{{ bookmark.description }}</p>
             <p class="card__url">{{ bookmark.url }}</p>
             <footer class="card__footer">
-              <span class="card__time">
-                更新于 {{ new Date(bookmark.updatedAt ?? bookmark.createdAt).toLocaleString() }}
-              </span>
+              <span class="card__time">权重：{{ bookmark.weight ?? 0 }}</span>
               <div v-if="isAuthenticated" class="card__buttons">
                 <button class="button button--ghost" @click.stop="startEdit(bookmark)">编辑</button>
                 <button class="button button--ghost-alt" @click.stop="toggleVisibility(bookmark)">

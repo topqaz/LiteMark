@@ -26,34 +26,31 @@ function sanitizeUrl(url: string): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const { id } = req.query;
-  if (!id || typeof id !== 'string') {
+  if (handleOptions(req, res, 'GET,PUT,DELETE,OPTIONS')) {
+    return;
+  }
+
+  applyCors(res, 'GET,PUT,DELETE,OPTIONS');
+
+  const id = req.query.id;
+  if (!id || Array.isArray(id)) {
     sendError(res, 400, '缺少书签 ID');
     return;
   }
 
-  if (handleOptions(req, res, 'PUT,DELETE,OPTIONS')) {
-    return;
-  }
-
-  applyCors(res, 'PUT,DELETE,OPTIONS');
-
-  const auth = requireAuth(req, res);
-  if (!auth) {
-    return;
-  }
-
   if (req.method === 'PUT') {
+    const auth = requireAuth(req, res);
+    if (!auth) {
+      return;
+    }
     try {
       const body = await parseJsonBody<BookmarkBody>(req);
       const title = body.title?.trim();
       const url = body.url?.trim();
-
       if (!title || !url) {
         sendError(res, 400, '标题和链接不能为空');
         return;
       }
-
       const updated = await updateBookmark(id, {
         title,
         url: sanitizeUrl(url),
@@ -61,12 +58,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         description: body.description?.trim() || undefined,
         visible: body.visible ?? true
       });
-
       if (!updated) {
-        sendError(res, 404, '未找到指定书签');
+        sendError(res, 404, '书签不存在');
         return;
       }
-
       sendJson(res, 200, updated);
     } catch (error) {
       console.error('更新书签失败', error);
@@ -76,13 +71,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'DELETE') {
+    const auth = requireAuth(req, res);
+    if (!auth) {
+      return;
+    }
     try {
-      const removed = await deleteBookmark(id);
-      if (!removed) {
-        sendError(res, 404, '未找到指定书签');
+      const deleted = await deleteBookmark(id);
+      if (!deleted) {
+        sendError(res, 404, '书签不存在');
         return;
       }
-      sendJson(res, 200, removed);
+      sendJson(res, 200, deleted);
     } catch (error) {
       console.error('删除书签失败', error);
       sendError(res, 500, '删除书签失败');

@@ -11,6 +11,7 @@ type Bookmark = {
   visible?: boolean;
   createdAt: string;
   updatedAt?: string;
+  weight?: number;
 };
 
 const router = useRouter();
@@ -794,7 +795,7 @@ onMounted(() => {
                   <th>分类</th>
                   <th>链接</th>
                   <th>状态</th>
-                  <th>更新时间</th>
+                  <th>权重</th>
                   <th class="table-actions">操作</th>
                 </tr>
               </thead>
@@ -813,7 +814,7 @@ onMounted(() => {
                       {{ bookmark.visible === false ? '隐藏' : '可见' }}
                     </span>
                   </td>
-                  <td>{{ new Date(bookmark.updatedAt ?? bookmark.createdAt).toLocaleString() }}</td>
+                  <td>{{ bookmark.weight ?? 0 }}</td>
                   <td class="table-actions">
                     <button
                       class="link-button"
