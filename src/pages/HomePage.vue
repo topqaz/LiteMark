@@ -79,6 +79,8 @@ const isAuthenticated = computed(() => Boolean(authToken.value));
 const showHidden = ref(false);
 const showForm = ref(false);
 const orderSaving = ref(false);
+const pendingOrder = ref<string[] | null>(null);
+const orderMessage = ref('');
 
 const containerRefs = new Map<string, HTMLElement>();
 const sortableInstances = new Map<string, Sortable>();
@@ -99,7 +101,7 @@ function destroySortables() {
   sortableInstances.clear();
 }
 
-async function persistOrder(newList: Bookmark[]) {
+async function persistOrder(orderIds: string[]) {
   if (!isAuthenticated.value) {
     showLoginModal.value = true;
     throw new Error('请先登录');
@@ -108,7 +110,7 @@ async function persistOrder(newList: Bookmark[]) {
   try {
     const response = await requestWithAuth(`${endpoint}/reorder`, {
       method: 'POST',
-      body: JSON.stringify({ order: newList.map((item) => item.id) })
+      body: JSON.stringify({ order: orderIds })
     });
     if (!response.ok) {
       const message = await response.text();
@@ -116,6 +118,8 @@ async function persistOrder(newList: Bookmark[]) {
     }
     const updated = (await response.json()) as Bookmark[];
     bookmarks.value = updated;
+    pendingOrder.value = null;
+    orderMessage.value = '排序已保存';
   } finally {
     orderSaving.value = false;
   }
@@ -161,12 +165,8 @@ async function handleGroupReorder(groupKey: string, orderedIds: string[]) {
   }
 
   bookmarks.value = reordered;
-  try {
-    await persistOrder(reordered);
-  } catch (error: any) {
-    error.value = error instanceof Error ? error.message : '排序失败';
-    bookmarks.value = original;
-  }
+  pendingOrder.value = reordered.map((item) => item.id);
+  orderMessage.value = '排序已调整，记得保存。';
 }
 
 function setupSortables() {
@@ -181,10 +181,9 @@ function setupSortables() {
       handle: '.card__drag-handle',
       ghostClass: 'card--dragging',
       onStart() {
-        orderSaving.value = true;
+        orderMessage.value = '';
       },
       onEnd() {
-        orderSaving.value = false;
         const ids = Array.from(container.querySelectorAll('[data-bookmark-id]')).map((el) =>
           el.getAttribute('data-bookmark-id') ?? ''
         );
@@ -778,6 +777,15 @@ function openBookmark(bookmark: Bookmark) {
         </div>
         <button
           v-if="isAuthenticated"
+          class="button button--primary"
+          type="button"
+          :disabled="orderSaving || !pendingOrder"
+          @click="() => pendingOrder && persistOrder(pendingOrder)"
+        >
+          {{ orderSaving ? '保存中...' : '保存顺序' }}
+        </button>
+        <button
+          v-if="isAuthenticated"
           class="button button--primary add-button"
           type="button"
           @click="toggleForm"
@@ -825,6 +833,7 @@ function openBookmark(bookmark: Bookmark) {
       </nav>
 
       <p v-if="themeMessage" class="alert alert--error">{{ themeMessage }}</p>
+      <p v-if="orderMessage" class="alert alert--success">{{ orderMessage }}</p>
       <section v-if="isAuthenticated && showForm" class="form-card">
         <header class="form-card__header">
           <h2>{{ editingId ? '编辑书签' : '新增书签' }}</h2>
@@ -931,8 +940,8 @@ function openBookmark(bookmark: Bookmark) {
               <p class="card__url">{{ bookmark.url }}</p>
               <footer class="card__footer" v-if="isAuthenticated">
                 <div class="card__buttons">
-                  <button class="button button--danger button--small" @click.stop="removeBookmark(bookmark.id)">
-                    删除
+                  <button class="button button--icon" @click.stop="removeBookmark(bookmark.id)" title="删除">
+                    ×
                   </button>
                 </div>
               </footer>
@@ -979,8 +988,8 @@ function openBookmark(bookmark: Bookmark) {
             <p class="card__url">{{ bookmark.url }}</p>
             <footer class="card__footer" v-if="isAuthenticated">
               <div class="card__buttons">
-                <button class="button button--danger button--small" @click.stop="removeBookmark(bookmark.id)">
-                  删除
+                <button class="button button--icon" @click.stop="removeBookmark(bookmark.id)" title="删除">
+                  ×
                 </button>
               </div>
             </footer>
@@ -1767,9 +1776,22 @@ function openBookmark(bookmark: Bookmark) {
   font-size: 13px;
 }
 
-.button--small {
-  padding: 4px 10px;
-  font-size: 12px;
+.button--icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger-text);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.button--icon:hover {
+  background: rgba(239, 68, 68, 0.2);
 }
 
 .card--hidden {
