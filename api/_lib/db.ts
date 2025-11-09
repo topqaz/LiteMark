@@ -127,6 +127,15 @@ async function loadBookmarks(): Promise<BookmarkRecord[]> {
   return [...data];
 }
 
+async function loadBookmarksFresh(): Promise<BookmarkRecord[]> {
+  const data = await readJson('bookmarks', [] as BookmarkRecord[]);
+  bookmarksCache = {
+    value: data
+  };
+  ensureBookmarksRefreshTimer();
+  return [...data];
+}
+
 async function saveBookmarks(bookmarks: BookmarkRecord[]) {
   await writeJson('bookmarks', bookmarks);
   bookmarksCache = {
@@ -202,7 +211,7 @@ export async function listBookmarks(): Promise<BookmarkRecord[]> {
 }
 
 export async function createBookmark(data: BookmarkInput): Promise<BookmarkRecord> {
-  const bookmarks = await loadBookmarks();
+  const bookmarks = await loadBookmarksFresh();
   const now = new Date().toISOString();
   const bookmark: BookmarkRecord = {
     id: randomUUID(),
@@ -220,7 +229,7 @@ export async function createBookmark(data: BookmarkInput): Promise<BookmarkRecor
 }
 
 export async function reorderBookmarks(order: string[]): Promise<BookmarkRecord[]> {
-  const bookmarks = await loadBookmarks();
+  const bookmarks = await loadBookmarksFresh();
   const map = new Map<string, BookmarkRecord>();
   bookmarks.forEach((bookmark) => {
     map.set(bookmark.id, bookmark);
@@ -250,7 +259,7 @@ export async function updateBookmark(
   id: string,
   data: BookmarkInput
 ): Promise<BookmarkRecord | null> {
-  const bookmarks = await loadBookmarks();
+  const bookmarks = await loadBookmarksFresh();
   const index = bookmarks.findIndex((item) => item.id === id);
   if (index === -1) {
     return null;
@@ -271,7 +280,7 @@ export async function updateBookmark(
 }
 
 export async function deleteBookmark(id: string): Promise<BookmarkRecord | null> {
-  const bookmarks = await loadBookmarks();
+  const bookmarks = await loadBookmarksFresh();
   const index = bookmarks.findIndex((item) => item.id === id);
   if (index === -1) {
     return null;
