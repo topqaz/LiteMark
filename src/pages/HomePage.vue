@@ -53,14 +53,6 @@ const settingsLoaded = ref(false);
 
 const siteTitle = ref<string>(DEFAULT_TITLE);
 const siteIcon = ref<string>(DEFAULT_ICON);
-const siteSettingsForm = reactive({
-  title: DEFAULT_TITLE,
-  icon: DEFAULT_ICON
-});
-const siteSettingsSaving = ref(false);
-const siteSettingsMessage = ref('');
-const siteSettingsError = ref('');
-
 const form = reactive({
   title: '',
   url: '',
@@ -186,16 +178,8 @@ function applySiteMeta(title: string, icon: string) {
   updateFavicon(resolvedIcon);
 }
 
-function resetSiteSettingsForm() {
-  siteSettingsForm.title = siteTitle.value;
-  siteSettingsForm.icon = siteIcon.value;
-  siteSettingsMessage.value = '';
-  siteSettingsError.value = '';
-}
-
 function handleSiteSettingsInput() {
-  siteSettingsMessage.value = '';
-  siteSettingsError.value = '';
+  return;
 }
 
 watch(currentTheme, (value) => {
@@ -337,14 +321,10 @@ async function loadSettings() {
     siteTitle.value = settings.siteTitle ?? DEFAULT_TITLE;
     siteIcon.value = settings.siteIcon ?? DEFAULT_ICON;
     applySiteMeta(siteTitle.value, siteIcon.value);
-    resetSiteSettingsForm();
     settingsLoaded.value = true;
     themeMessage.value = '';
-    siteSettingsMessage.value = '';
-    siteSettingsError.value = '';
   } catch (err) {
     themeMessage.value = err instanceof Error ? err.message : '加载主题配置失败';
-    siteSettingsError.value = err instanceof Error ? err.message : '加载站点设置失败';
   }
 }
 
@@ -498,48 +478,6 @@ async function handleThemeChange() {
     selectedTheme.value = previous;
   } finally {
     themeSaving.value = false;
-  }
-}
-
-async function saveSiteSettings() {
-  if (!isAuthenticated.value) {
-    showLoginModal.value = true;
-    return;
-  }
-  const payload = {
-    siteTitle: siteSettingsForm.title.trim(),
-    siteIcon: siteSettingsForm.icon.trim()
-  };
-  if (!payload.siteTitle) {
-    siteSettingsError.value = '站点标题不能为空';
-    return;
-  }
-  siteSettingsSaving.value = true;
-  siteSettingsMessage.value = '';
-  siteSettingsError.value = '';
-  try {
-    const response = await requestWithAuth(`${apiBase}/api/settings`, {
-      method: 'PUT',
-      body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message || '保存站点设置失败');
-    }
-    const result = (await response.json()) as {
-      siteTitle: string;
-      siteIcon: string;
-      theme: string;
-    };
-    siteTitle.value = result.siteTitle ?? DEFAULT_TITLE;
-    siteIcon.value = result.siteIcon ?? DEFAULT_ICON;
-    applySiteMeta(siteTitle.value, siteIcon.value);
-    resetSiteSettingsForm();
-    siteSettingsMessage.value = '站点信息已保存';
-  } catch (err) {
-    siteSettingsError.value = err instanceof Error ? err.message : '保存站点设置失败';
-  } finally {
-    siteSettingsSaving.value = false;
   }
 }
 
@@ -728,55 +666,6 @@ function openBookmark(bookmark: Bookmark) {
       </nav>
 
       <p v-if="themeMessage" class="alert alert--error">{{ themeMessage }}</p>
-      <p v-if="siteSettingsError && !isAuthenticated" class="alert alert--error">{{ siteSettingsError }}</p>
-
-      <section v-if="isAuthenticated" class="form-card">
-        <header class="form-card__header">
-          <h2>站点设置</h2>
-          <span>配置网站标题与浏览器图标</span>
-        </header>
-        <form @submit.prevent="saveSiteSettings">
-          <div class="form-grid">
-            <label class="field">
-              <span>网站标题 *</span>
-              <input
-                v-model="siteSettingsForm.title"
-                type="text"
-                placeholder="例如：我的书签收藏"
-                maxlength="60"
-                required
-                @input="handleSiteSettingsInput"
-              />
-            </label>
-            <label class="field">
-              <span>网站图标</span>
-              <input
-                v-model="siteSettingsForm.icon"
-                type="text"
-                placeholder="支持 Emoji 或图标链接"
-                maxlength="512"
-                @input="handleSiteSettingsInput"
-              />
-            </label>
-          </div>
-          <p v-if="siteSettingsError" class="alert alert--error">{{ siteSettingsError }}</p>
-          <p v-else-if="siteSettingsMessage" class="alert alert--success">{{ siteSettingsMessage }}</p>
-          <div class="form-actions">
-            <button class="button button--primary" type="submit" :disabled="siteSettingsSaving">
-              {{ siteSettingsSaving ? '保存中...' : '保存站点信息' }}
-            </button>
-            <button
-              class="button button--ghost"
-              type="button"
-              @click="resetSiteSettingsForm"
-              :disabled="siteSettingsSaving"
-            >
-              恢复当前设置
-            </button>
-          </div>
-        </form>
-      </section>
-
       <section v-if="isAuthenticated && showForm" class="form-card">
         <header class="form-card__header">
           <h2>{{ editingId ? '编辑书签' : '新增书签' }}</h2>
