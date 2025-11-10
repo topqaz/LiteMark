@@ -1,21 +1,23 @@
 {
-    "functions": {
-      "api/**/*.ts": {
-        "runtime": "@vercel/node@3.2.8"
-      }
-    },
-    "rewrites": [
-      { "source": "/api/(.*)", "destination": "/api/$1" },
-      { "source": "/(.*)", "destination": "/" }
-    ],
-    "headers": [
-      {
-        "source": "/(.*)\\.(js|css|json|svg|png|jpg|jpeg|gif|webp|ico|woff2?)",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, max-age=0" },
-          { "key": "Pragma", "value": "no-cache" },
-          { "key": "Expires", "value": "0" }
-        ]
-      }
-    ]
-  }
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "@vercel/node@3.2.8"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)\\.(js|css|json|svg|png|jpg|jpeg|gif|webp|ico|woff2?)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, max-age=0" },
+        { "key": "Pragma", "value": "no-cache" },
+        { "key": "Expires", "value": "0" }
+      ]
+    }
+  ]
+}
