@@ -97,13 +97,6 @@ LiteMark 的接口前缀统一为 `/api`，除特别说明外均返回 JSON。�
 - **说明**：仅调整分类顺序，分类内书签顺序保持不变；未提交的分类自动追加到末尾。
 - **响应**：`BookmarkRecord[]`
 
-### `POST /api/bookmarks/refresh`
-- **描述**：强制从存储刷新书签缓存。
-- **鉴权**：需要。
-- **响应**：`BookmarkRecord[]`
-
----
-
 ## 站点设置接口
 
 ### `GET /api/settings`
@@ -125,13 +118,6 @@ LiteMark 的接口前缀统一为 `/api`，除特别说明外均返回 JSON。�
 - **限制**：`theme` 必须是 `light/dark/forest/ocean/sunrise/twilight` 之一；`siteTitle` ≤ 60 字符；`siteIcon` ≤ 512 字符。
 - **响应**：更新后的 `Settings`。
 
-### `POST /api/settings/refresh`
-- **描述**：刷新站点设置缓存。
-- **鉴权**：需要。
-- **响应**：最新设置对象。
-
----
-
 ## 返回规范与错误处理
 
 - 成功：`200 OK`，新增使用 `201 Created`。
@@ -149,6 +135,5 @@ LiteMark 的接口前缀统一为 `/api`，除特别说明外均返回 JSON。�
 
 - 本地函数：`vercel dev`，或 `vercel dev --listen 127.0.0.1:3005`。
 - 前端联调：前端 `.env.local` 设置 `VITE_API_BASE_URL` 为上述函数地址。
-- 缓存刷新：后台按钮或直接调用 `/api/bookmarks/refresh`、`/api/settings/refresh`。
 - 生产排障：部署后在 Vercel 后台查看 Function Logs，定位 4xx/5xx 具体原因。
 

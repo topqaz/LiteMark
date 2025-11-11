@@ -37,8 +37,6 @@ LiteMark 是一款基于 **Vue 3 + Vite** 的个人书签管理应用，提供�
 | `BLOB_READ_WRITE_TOKEN` | 使用 Vercel Blob 必填的令牌。 | - |
 | `ADMIN_USERNAME` | 后台登录用户名。 | `admin` |
 | `ADMIN_PASSWORD` | 后台登录密码。 | `admin123` |
-| `SETTINGS_CACHE_TTL_MS` | 站点设置缓存 TTL（毫秒，0 表示关闭缓存）。 | `60000` |
-| `BOOKMARKS_CACHE_TTL_MS` | 书签缓存 TTL（毫秒，0 表示关闭缓存）。 | `60000` |
 
 > 选择非默认存储驱动时，请补充对应的 Bucket、Endpoint、密钥等字段，可参考 `api/_lib/storage.ts` 内的 `ensureXXXClient` 实现。
 
@@ -79,6 +77,6 @@ LiteMark 是一款基于 **Vue 3 + Vite** 的个人书签管理应用，提供�
    - 在 `.env.local` 中设置 `VITE_API_BASE_URL` 指向部署好的地址，或使用 `vercel dev` 同时启动函数。
 
 5. **存储驱动切换失败？**
-   - 请在后台刷新数据或调用 `/api/bookmarks/refresh`、`/api/settings/refresh`，同时确保相关凭证正确。
+   - 确认环境变量已更新并重新部署；若仍报错，请查看函数日志排查访问凭证或网络策略问题。
 
 更多使用说明请参考 [`api.md`](./api.md)。欢迎提交 Issue / PR 优化功能。

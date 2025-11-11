@@ -801,15 +801,6 @@ function openBookmark(bookmark: Bookmark) {
         </div>
       </div>
       <div class="topbar__actions">
-        <button
-          v-if="isAuthenticated"
-          class="button button--ghost refresh-button"
-          type="button"
-          :disabled="loading"
-          @click="loadBookmarks"
-        >
-          {{ loading ? '加载中...' : '刷新数据' }}
-        </button>
         <div v-if="isAuthenticated" class="theme-switcher">
           <label>
             <span>主题</span>
@@ -1740,12 +1731,12 @@ function openBookmark(bookmark: Bookmark) {
 
 .category-group {
   background: var(--surface-glass);
-  border-radius: 24px;
-  padding: 24px 24px 30px;
-  box-shadow: 0 16px 36px var(--surface-shadow);
+  border-radius: 22px;
+  padding: 20px;
+  box-shadow: 0 14px 30px var(--surface-shadow);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .category-group__header {
@@ -1778,21 +1769,24 @@ function openBookmark(bookmark: Bookmark) {
 
 .card-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  align-items: stretch;
 }
 
 .card {
   background: var(--surface-card);
-  border-radius: 20px;
-  padding: 20px;
+  border-radius: 18px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   box-shadow: inset 0 0 0 1px var(--surface-border);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   position: relative;
+  height: 100%;
 }
 
 .card:hover {
@@ -1804,7 +1798,7 @@ function openBookmark(bookmark: Bookmark) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .card__header-main {
@@ -1823,8 +1817,8 @@ function openBookmark(bookmark: Bookmark) {
 
 .card__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -1839,9 +1833,9 @@ function openBookmark(bookmark: Bookmark) {
 .card__description {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
-  min-height: 42px;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 36px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1851,7 +1845,7 @@ function openBookmark(bookmark: Bookmark) {
 
 .card__url {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--accent-text);
   word-break: break-all;
   white-space: nowrap;
@@ -2087,10 +2081,6 @@ function openBookmark(bookmark: Bookmark) {
   .save-button,
   .add-button {
     grid-row: auto;
-  }
-
-  .refresh-button {
-    grid-column: span 1;
   }
 
   .search-input {
