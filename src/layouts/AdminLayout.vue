@@ -64,6 +64,12 @@
         </div>
       </el-main>
     </el-container>
+    <!-- 底栏 -->
+    <el-footer class="footer-bar">
+      <p class="footer-copyright">
+        © {{ new Date().getFullYear() }} LiteMark. All rights reserved.
+      </p>
+    </el-footer>
   </el-container>
 </template>
 
@@ -340,6 +346,36 @@ html, body, #app {
   
   .content-wrapper {
     padding: 20px;
+  }
+}
+
+/* 底栏 */
+.footer-bar {
+  height: auto;
+  min-height: 50px;
+  background: #fff;
+  border-top: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.footer-copyright {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .footer-bar {
+    padding: 12px 15px;
+  }
+
+  .footer-copyright {
+    font-size: 12px;
   }
 }
 </style>

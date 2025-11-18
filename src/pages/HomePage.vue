@@ -1125,6 +1125,12 @@ function openBookmark(bookmark: Bookmark) {
       </section>
     </main>
 
+    <footer class="footer">
+      <p class="footer__copyright">
+        © {{ new Date().getFullYear() }} LiteMark. All rights reserved.
+      </p>
+    </footer>
+
     <div v-if="showLoginModal" class="overlay" @click.self="closeLogin">
       <section class="dialog">
         <header class="dialog__header">
@@ -2254,6 +2260,32 @@ function openBookmark(bookmark: Bookmark) {
   }
 
   .card__url {
+    font-size: 12px;
+  }
+}
+
+.footer {
+  padding: 20px 40px;
+  text-align: center;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--surface-border);
+  margin-top: auto;
+}
+
+.footer__copyright {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+  .footer {
+    padding: 16px 20px;
+  }
+
+  .footer__copyright {
     font-size: 12px;
   }
 }
