@@ -24,5 +24,11 @@
         { "key": "Expires", "value": "0" }
       ]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/backup",
+      "schedule": "0 2 * * *"
+    }
   ]
 }
