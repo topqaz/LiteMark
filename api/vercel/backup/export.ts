@@ -32,8 +32,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const backup = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
+      settings,
       bookmarks,
-      settings
+      
     };
 
     sendJson(res, 200, backup);

@@ -12,6 +12,7 @@ import { requireAuth } from '../_lib/auth.js';
 
 type BackupData = {
   version?: string;
+  overwrite?: boolean;
   bookmarks?: Array<{
     title: string;
     url: string;
@@ -52,18 +53,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const body = await parseJsonBody<BackupData>(req);
+    const overwrite = body.overwrite === true;
     
-    // 清空现有数据（可选，根据需求决定）
-    // 这里我们选择合并数据，而不是完全替换
+    // 如果选择覆盖，先删除所有现有书签
+    if (overwrite) {
+      const existingBookmarks = await listBookmarks();
+      for (const bookmark of existingBookmarks) {
+        try {
+          await deleteBookmark(bookmark.id);
+        } catch (error) {
+          console.error('删除现有书签失败', error);
+        }
+      }
+    }
     
     // 导入书签
     let importedCount = 0;
+    const errors: string[] = [];
     if (Array.isArray(body.bookmarks)) {
       for (const item of body.bookmarks) {
         const title = item.title?.trim();
         const url = item.url?.trim();
 
         if (!title || !url) {
+          errors.push(`跳过无效书签：标题或链接为空`);
           continue;
         }
 
@@ -77,24 +90,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
           importedCount++;
         } catch (error) {
-          console.error('导入书签项失败', error);
+          const errorMsg = `导入书签失败：${title}`;
+          console.error(errorMsg, error);
+          errors.push(errorMsg);
         }
       }
     }
 
     // 导入设置
+    let updatedSettings = false;
     if (body.settings) {
       try {
         await updateSettings(body.settings);
+        updatedSettings = true;
       } catch (error) {
         console.error('导入设置失败', error);
+        errors.push('导入设置失败');
       }
     }
 
     const allBookmarks = await listBookmarks();
     sendJson(res, 200, { 
-      imported: importedCount,
-      bookmarks: allBookmarks 
+      success: true,
+      importedBookmarks: importedCount,
+      updatedSettings,
+      totalBookmarks: allBookmarks.length,
+      errors: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
     console.error('导入备份失败', error);
