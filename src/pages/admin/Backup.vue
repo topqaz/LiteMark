@@ -83,13 +83,158 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- WebDAV 定时备份配置 -->
+    <el-card class="backup-card webdav-card" style="margin-top: 24px;">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3>WebDAV 定时备份</h3>
+          <el-switch
+            v-model="webdavConfig.enabled"
+            :disabled="webdavSaving || !isAuthenticated || !webdavConfig.url"
+            active-text="已开启"
+            inactive-text="已关闭"
+            @change="toggleAutoBackup"
+          />
+        </div>
+      </template>
+      <p class="backup-description">配置 WebDAV 服务器以实现自动备份（默认每天凌晨2点备份）</p>
+      
+      <el-form :model="webdavConfig" label-width="120px" class="webdav-form">
+        <el-form-item label="WebDAV 地址" required>
+          <el-input
+            v-model="webdavConfig.url"
+            placeholder="例如：https://dav.example.com"
+            :disabled="webdavSaving || !isAuthenticated"
+          />
+        </el-form-item>
+        <el-form-item label="用户名" required>
+          <el-input
+            v-model="webdavConfig.username"
+            placeholder="WebDAV 用户名"
+            :disabled="webdavSaving || !isAuthenticated"
+          />
+        </el-form-item>
+        <el-form-item label="密码" required>
+          <el-input
+            v-model="webdavConfig.password"
+            type="password"
+            placeholder="WebDAV 密码"
+            show-password
+            :disabled="webdavSaving || !isAuthenticated"
+          />
+        </el-form-item>
+        <el-form-item label="备份路径">
+          <el-input
+            v-model="webdavConfig.path"
+            placeholder="litemark-backup/ 或 /backups/"
+            :disabled="webdavSaving || !isAuthenticated"
+          />
+          <div class="form-tip">留空则使用默认路径 litemark-backup/（建议使用目录路径）</div>
+        </el-form-item>
+        <el-form-item label="保留备份数量">
+          <el-input-number
+            v-model="webdavConfig.keepBackups"
+            :min="0"
+            :max="365"
+            :disabled="webdavSaving || !isAuthenticated"
+            style="width: 100%"
+          />
+          <div class="form-tip">保留最近的备份文件数量，0 表示不限制（建议设置为 7-30）</div>
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            :loading="webdavSaving"
+            :disabled="!isAuthenticated"
+            @click="saveWebDAVConfig"
+          >
+            保存配置
+          </el-button>
+          <el-button
+            :loading="webdavTesting"
+            :disabled="!isAuthenticated || webdavSaving"
+            @click="testWebDAVConnection"
+          >
+            测试连接
+          </el-button>
+          <el-button
+            :loading="webdavBackupLoading"
+            :disabled="!isAuthenticated || !webdavConfig.url"
+            @click="triggerWebDAVBackup"
+          >
+            立即备份
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-alert
+        v-if="webdavError"
+        :title="webdavError"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-top: 16px;"
+      />
+      <el-alert
+        v-else-if="webdavMessage"
+        :title="webdavMessage"
+        type="success"
+        :closable="false"
+        show-icon
+        style="margin-top: 16px;"
+      />
+
+      <el-alert
+        v-if="webdavConfig.enabled"
+        type="success"
+        :closable="false"
+        show-icon
+        style="margin-top: 16px;"
+      >
+        <template #title>
+          <div>
+            <strong>自动备份已开启</strong>
+            <p style="margin: 8px 0 0 0; font-size: 13px;">
+              系统将在 Cron Job 触发时自动备份数据到 WebDAV。每次备份会创建新文件（格式：<code>litemark-backup-YYYY-MM-DD.json</code>），并自动清理超出保留数量的旧备份。
+            </p>
+            <p style="margin: 8px 0 0 0; font-size: 13px;">
+              请确保在 <code>vercel.json</code> 中已配置 Cron Job：
+            </p>
+            <pre style="margin: 8px 0 0 0; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px; overflow-x: auto;">{
+  "crons": [{
+    "path": "/api/cron/backup",
+    "schedule": "0 2 * * *"
+  }]
+}</pre>
+          </div>
+        </template>
+      </el-alert>
+
+      <el-alert
+        v-else
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-top: 16px;"
+      >
+        <template #title>
+          <div>
+            <strong>自动备份已关闭</strong>
+            <p style="margin: 8px 0 0 0; font-size: 13px;">
+              开启自动备份后，系统将按 Cron Job 配置的时间自动备份数据到 WebDAV。
+            </p>
+          </div>
+        </template>
+      </el-alert>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Download, Upload } from '@element-plus/icons-vue';
+// 图标已全局注册，直接使用组件名称
 
 const apiBaseRaw =
   (typeof window !== 'undefined'
@@ -109,6 +254,21 @@ const backupImportMessage = ref('');
 const backupImportError = ref('');
 const backupImportFileInput = ref<HTMLInputElement | null>(null);
 const backupImportOverwrite = ref(false);
+
+// WebDAV 配置
+const webdavConfig = ref({
+  url: '',
+  username: '',
+  password: '',
+  path: 'litemark-backup/',
+  keepBackups: 7,
+  enabled: false
+});
+const webdavSaving = ref(false);
+const webdavTesting = ref(false);
+const webdavBackupLoading = ref(false);
+const webdavMessage = ref('');
+const webdavError = ref('');
 
 async function requestWithAuth(input: RequestInfo | URL, init: RequestInit = {}) {
   if (!authToken.value) {
@@ -310,6 +470,204 @@ function triggerBackupImportFile() {
   }
   backupImportFileInput.value?.click();
 }
+
+// 加载 WebDAV 配置
+async function loadWebDAVConfig() {
+  if (!isAuthenticated.value) {
+    return;
+  }
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/backup/webdav`, {
+      method: 'GET'
+    });
+    if (response.ok) {
+      const config = await response.json();
+      if (config) {
+        webdavConfig.value = {
+          url: config.url || '',
+          username: config.username || '',
+          password: '', // 不加载密码
+          path: config.path || 'litemark-backup/',
+          keepBackups: config.keepBackups ?? 7,
+          enabled: config.enabled !== false
+        };
+      }
+    }
+  } catch (err) {
+    console.error('加载 WebDAV 配置失败:', err);
+  }
+}
+
+// 保存 WebDAV 配置
+async function saveWebDAVConfig() {
+  if (!isAuthenticated.value) {
+    ElMessage.warning('请先登录');
+    return;
+  }
+
+  if (!webdavConfig.value.url || !webdavConfig.value.username || !webdavConfig.value.password) {
+    webdavError.value = '请填写完整的 WebDAV 配置信息';
+    return;
+  }
+
+  webdavSaving.value = true;
+  webdavMessage.value = '';
+  webdavError.value = '';
+
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/backup/webdav`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...webdavConfig.value,
+        keepBackups: webdavConfig.value.keepBackups ?? 7,
+        provider: 'webdav'
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || '保存配置失败');
+    }
+
+    webdavMessage.value = 'WebDAV 配置已保存';
+    ElMessage.success('WebDAV 配置已保存');
+  } catch (err) {
+    webdavError.value = err instanceof Error ? err.message : '保存配置失败';
+    ElMessage.error(webdavError.value);
+  } finally {
+    webdavSaving.value = false;
+  }
+}
+
+// 开启/关闭自动备份
+async function toggleAutoBackup(enabled: boolean) {
+  if (!isAuthenticated.value) {
+    ElMessage.warning('请先登录');
+    webdavConfig.value.enabled = !enabled; // 恢复原状态
+    return;
+  }
+
+  // 如果开启但配置不完整，提示用户
+  if (enabled && (!webdavConfig.value.url || !webdavConfig.value.username || !webdavConfig.value.password)) {
+    ElMessage.warning('请先填写完整的 WebDAV 配置信息');
+    webdavConfig.value.enabled = false; // 恢复原状态
+    return;
+  }
+
+  webdavSaving.value = true;
+  webdavMessage.value = '';
+  webdavError.value = '';
+
+  try {
+    // 如果配置不完整，先尝试加载已有配置
+    if (!webdavConfig.value.url) {
+      await loadWebDAVConfig();
+    }
+
+    const response = await requestWithAuth(`${apiBase}/api/backup/webdav`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...webdavConfig.value,
+        enabled: enabled,
+        keepBackups: webdavConfig.value.keepBackups ?? 7,
+        provider: 'webdav'
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || '操作失败');
+    }
+
+    webdavMessage.value = enabled ? '自动备份已开启' : '自动备份已关闭';
+    ElMessage.success(webdavMessage.value);
+  } catch (err) {
+    webdavError.value = err instanceof Error ? err.message : '操作失败';
+    ElMessage.error(webdavError.value);
+    webdavConfig.value.enabled = !enabled; // 恢复原状态
+  } finally {
+    webdavSaving.value = false;
+  }
+}
+
+// 测试 WebDAV 连接
+async function testWebDAVConnection() {
+  if (!isAuthenticated.value) {
+    ElMessage.warning('请先登录');
+    return;
+  }
+
+  if (!webdavConfig.value.url || !webdavConfig.value.username || !webdavConfig.value.password) {
+    webdavError.value = '请先填写 WebDAV 配置信息';
+    return;
+  }
+
+  webdavTesting.value = true;
+  webdavMessage.value = '';
+  webdavError.value = '';
+
+  try {
+    // 先保存配置以测试连接
+    const response = await requestWithAuth(`${apiBase}/api/backup/webdav`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...webdavConfig.value,
+        provider: 'webdav'
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || '连接测试失败');
+    }
+
+    webdavMessage.value = 'WebDAV 连接测试成功';
+    ElMessage.success('WebDAV 连接测试成功');
+  } catch (err) {
+    webdavError.value = err instanceof Error ? err.message : '连接测试失败';
+    ElMessage.error(webdavError.value);
+  } finally {
+    webdavTesting.value = false;
+  }
+}
+
+// 立即备份到 WebDAV
+async function triggerWebDAVBackup() {
+  if (!isAuthenticated.value) {
+    ElMessage.warning('请先登录');
+    return;
+  }
+
+  webdavBackupLoading.value = true;
+  webdavMessage.value = '';
+  webdavError.value = '';
+
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/backup/webdav`, {
+      method: 'POST'
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || '备份失败');
+    }
+
+    const result = await response.json();
+    webdavMessage.value = result.message || '备份到 WebDAV 成功';
+    ElMessage.success(webdavMessage.value);
+  } catch (err) {
+    webdavError.value = err instanceof Error ? err.message : '备份失败';
+    ElMessage.error(webdavError.value);
+  } finally {
+    webdavBackupLoading.value = false;
+  }
+}
+
+
+// 页面加载时获取配置
+onMounted(() => {
+  loadWebDAVConfig();
+});
 </script>
 
 <style scoped>
@@ -350,6 +708,49 @@ function triggerBackupImportFile() {
 
 .backup-import-options {
   margin-bottom: 16px;
+}
+
+.webdav-card {
+  margin-top: 24px;
+}
+
+.webdav-form {
+  margin-top: 16px;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.webdav-form pre {
+  font-family: 'Courier New', monospace;
+}
+
+.webdav-form code {
+  font-family: 'Courier New', monospace;
+  background: #f5f5f5;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .webdav-form :deep(.el-form-item__label) {
+    width: 100% !important;
+    text-align: left;
+    margin-bottom: 8px;
+  }
+
+  .webdav-form :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+
+  .webdav-form :deep(.el-button) {
+    width: 100%;
+    margin-bottom: 8px;
+  }
 }
 
 @media (max-width: 768px) {

@@ -10,19 +10,71 @@ LiteMark 是一款基于 **Vue 3 + Vite** 的个人书签管理应用，提供�
 - 🔍 **高效浏览**：搜索框置于顶栏，移动端卡片两列展示并自动适配描述内容。
 - 🔐 **后台面板**：位于 `/admin`，含登录校验、缓存刷新、站点设置等管理动作。
 - 🚀 **极佳体验**：SSR 友好的 API、前端缓存提示、响应式布局与移动端操作优化。
+- 💾 **WebDAV 定时备份**：支持配置 WebDAV 服务器，实现定时自动循环备份（每天/每周/每月）。
 
 ---
 
-##  目前问题
-- 数据导入导出可能有一些问题
+## WebDAV 定时备份
 
+LiteMark 支持将数据定时备份到 WebDAV 服务器，确保数据安全。
 
-## 后续更新计划
+### 配置步骤
 
-- 增加更多部署方案
-- 优化备份导入功能
-- 优化数据导入导出功能
+1. **在后台配置 WebDAV**
+   - 进入后台管理 → 数据备份
+   - 在 "WebDAV 定时备份" 区域填写：
+     - WebDAV 地址（如：`https://dav.example.com`）
+     - 用户名和密码
+     - 备份路径（可选，默认为 `litemark-backup/`）
+     - 备份频率（每天/每周/每月）
+   - 点击"测试连接"验证配置
+   - 点击"保存配置"保存设置
 
+2. **启用定时备份**
+   - 打开"启用定时备份"开关
+   - 保存配置
+
+3. **配置 Vercel Cron Job**  （默认每天凌晨2点，如需自定义备份频率可以更改）
+   
+   在项目根目录的 `vercel.json` 中添加 cron 配置：
+
+   ```json
+   {
+     "crons": [{
+       "path": "/api/cron/backup",
+       "schedule": "0 2 * * *"
+     }]
+   }
+   ```
+
+   - `schedule` 使用 cron 表达式，根据你选择的备份频率：
+     - **每天**：`0 2 * * *` - 每天凌晨 2 点
+     - **每周**：`0 2 * * 0` - 每周日凌晨 2 点
+     - **每月**：`0 2 1 * *` - 每月 1 号凌晨 2 点
+
+4. **设置 CRON_SECRET（推荐）**
+   
+   在 Vercel 环境变量中添加 `CRON_SECRET`，用于保护 cron 端点：
+
+   ```
+   CRON_SECRET=your-random-secret-key
+   ```
+
+   Cron Job 会自动在请求头中添加 `Authorization: Bearer ${CRON_SECRET}`。
+
+### 手动备份
+
+在后台管理 → 数据备份页面，点击"立即备份"按钮可手动触发备份到 WebDAV。
+
+### 备份文件格式
+
+备份文件为 JSON 格式，包含：
+- 所有书签数据
+- 站点设置（主题、标题、图标等）
+- 导出时间戳
+- 文件名格式：`litemark-backup-YYYY-MM-DD.json`
+
+---
 
 ## 部署到 Vercel
 
@@ -52,6 +104,7 @@ https://github.com/topqaz/LiteMark-extension-browser
 | `POSTGRES_URL` | Vercel Postgres 数据库连接 URL（Vercel 自动提供） | - | 是（Vercel 部署） |
 | `POSTGRES_PRISMA_URL` | Vercel Postgres Prisma 连接 URL（Vercel 自动提供） | - | 是（Vercel 部署） |
 | `POSTGRES_URL_NON_POOLING` | Vercel Postgres 非连接池 URL（Vercel 自动提供） | - | 是（Vercel 部署） |
+| `CRON_SECRET` | Cron Job 安全密钥（用于保护自动备份端点） | - | 否（推荐） |
 
 ### 环境变量说明
 
