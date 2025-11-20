@@ -14,6 +14,15 @@ LiteMark 是一款基于 **Vue 3 + Vite** 的个人书签管理应用，提供�
 
 ---
 
+## 部署到 Vercel
+
+1. **Fork / Clone** 仓库，并推送至自己的 Git 仓库。
+2. 新建Neon Serverless Postgres 数据库   最后绑定到自己的项目
+2. 在 Vercel 创建新项目，导入仓库。
+3. 项目设置 → **Environment Variables**，填入 `.env.example` 中的变量（见下表）。
+4. 点击 **Deploy**，等待构建完成。前端地址为 `https://<project>.vercel.app`，后台入口 `https://<project>.vercel.app/admin`。
+
+
 ## WebDAV 定时备份
 
 LiteMark 支持将数据定时备份到 WebDAV 服务器，确保数据安全。
@@ -33,16 +42,20 @@ LiteMark 支持将数据定时备份到 WebDAV 服务器，确保数据安全。
 2. **启用定时备份**
    - 打开"启用定时备份"开关
    - 保存配置
-
+   - 自定义触发方式
+      - 默认使用vercel cron job来定时触发也可以使用一些平台来定时触发  
+      - 定时访问这个api即可  `http://dav.example.com/api/cron/backup`
+      - 如果CRON_SECRET 请求时须在请求头添加CRON_SECRET
 3. **配置 Vercel Cron Job**  （默认每天凌晨2点，如需自定义备份频率可以更改）
-   
+   默认使用的UTC +0时间  注意转换
+   "schedule": "0 10 * * *"  代表的上海时间 每天2:00进行一次备份
    在项目根目录的 `vercel.json` 中添加 cron 配置：
 
    ```json
    {
      "crons": [{
        "path": "/api/cron/backup",
-       "schedule": "0 2 * * *"
+       "schedule": "0 10 * * *"
      }]
    }
    ```

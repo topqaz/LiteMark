@@ -73,7 +73,7 @@
     <!-- 底栏 -->
     <el-footer class="footer-bar">
       <p class="footer-copyright">
-        © {{ new Date().getFullYear() }} LiteMark. All rights reserved.
+        © {{ getShanghaiYear() }} LiteMark. All rights reserved.
       </p>
     </el-footer>
   </el-container>
@@ -82,6 +82,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { getShanghaiYear } from '../utils/date.js';
 import { ElMessage } from 'element-plus';
 import {
   User,

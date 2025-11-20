@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { getShanghaiDateString } from '../utils/date.js';
 
 type Bookmark = {
   id: string;
@@ -796,7 +797,7 @@ async function handleExportBackup() {
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const filename = `litemark-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const filename = `litemark-backup-${getShanghaiDateString()}.json`;
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);

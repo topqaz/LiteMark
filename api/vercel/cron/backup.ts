@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getStorageConfig } from '../_lib/storage.js';
 import { uploadToWebDAV, cleanupOldBackups, type WebDAVConfig } from '../_lib/webdav.js';
 import { exportBackupData } from '../backup/export.js';
+import { getShanghaiDateString, getShanghaiISOString } from '../_lib/date.js';
 
 /**
  * Vercel Cron Job: 定时备份到 WebDAV
@@ -53,7 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 执行备份：直接使用 export 功能
     const backup = await exportBackupData();
     const content = JSON.stringify(backup, null, 2);
-    const filename = `litemark-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const filename = `litemark-backup-${getShanghaiDateString()}.json`;
     const filePath = webdavConfig.path || 'litemark-backup/';
     
     // 如果路径是目录，添加文件名
@@ -83,7 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ 
       success: true,
       message: '定时备份成功',
-      timestamp: new Date().toISOString(),
+      timestamp: getShanghaiISOString(),
       bookmarksCount: backup.bookmarks.length,
       deletedBackups: deletedCount
     });

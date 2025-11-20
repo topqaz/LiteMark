@@ -8,6 +8,7 @@ import {
 import { listBookmarks } from '../_lib/db.js';
 import { getSettings } from '../_lib/db.js';
 import { requireAuth } from '../_lib/auth.js';
+import { getShanghaiISOString } from '../_lib/date.js';
 
 /**
  * 导出备份数据
@@ -18,7 +19,7 @@ export async function exportBackupData() {
   
   return {
     version: '1.0',
-    exportedAt: new Date().toISOString(),
+    exportedAt: getShanghaiISOString(),
     settings,
     bookmarks
   };

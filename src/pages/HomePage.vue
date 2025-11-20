@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import Sortable from 'sortablejs';
+import { getShanghaiYear } from '../utils/date.js';
 
 type Bookmark = {
   id: string;
@@ -1127,7 +1128,7 @@ function openBookmark(bookmark: Bookmark) {
 
     <footer class="footer">
       <p class="footer__copyright">
-        © {{ new Date().getFullYear() }} LiteMark. All rights reserved.
+        © {{ getShanghaiYear() }} LiteMark. All rights reserved.
       </p>
     </footer>
 

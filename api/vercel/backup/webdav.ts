@@ -10,6 +10,7 @@ import { getStorageConfig, saveStorageConfig } from '../_lib/storage.js';
 import { uploadToWebDAV, testWebDAVConnection, cleanupOldBackups, type WebDAVConfig } from '../_lib/webdav.js';
 import { requireAuth } from '../_lib/auth.js';
 import { exportBackupData } from './export.js';
+import { getShanghaiDateString, getShanghaiISOString } from '../_lib/date.js';
 
 /**
  * 备份到 WebDAV
@@ -19,7 +20,7 @@ export async function backupToWebDAV(config: WebDAVConfig): Promise<void> {
   const backup = await exportBackupData();
   
   const content = JSON.stringify(backup, null, 2);
-  const filename = `litemark-backup-${new Date().toISOString().split('T')[0]}.json`;
+  const filename = `litemark-backup-${getShanghaiDateString()}.json`;
   const filePath = config.path || 'litemark-backup/';
   
   // 如果路径是目录，添加文件名
@@ -165,7 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sendJson(res, 200, { 
         success: true, 
         message: '备份到 WebDAV 成功',
-        timestamp: new Date().toISOString()
+        timestamp: getShanghaiISOString()
       });
     } catch (error) {
       console.error('备份到 WebDAV 失败', error);

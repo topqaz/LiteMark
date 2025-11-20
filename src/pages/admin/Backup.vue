@@ -87,7 +87,7 @@
     <!-- WebDAV 定时备份配置 -->
     <el-card class="backup-card webdav-card" style="margin-top: 24px;">
       <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="webdav-card-header">
           <h3>WebDAV 定时备份</h3>
           <el-switch
             v-model="webdavConfig.enabled"
@@ -95,6 +95,7 @@
             active-text="已开启"
             inactive-text="已关闭"
             @change="toggleAutoBackup"
+            class="webdav-header-switch"
           />
         </div>
       </template>
@@ -228,6 +229,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { getShanghaiDateString } from '../../utils/date.js';
 // 图标已全局注册，直接使用组件名称
 
 const apiBaseRaw =
@@ -312,7 +314,7 @@ async function handleExportBackup() {
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const filename = `litemark-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const filename = `litemark-backup-${getShanghaiDateString()}.json`;
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);
@@ -748,21 +750,22 @@ onMounted(() => {
   font-size: 12px;
 }
 
-@media (max-width: 768px) {
-  .webdav-form :deep(.el-form-item__label) {
-    width: 100% !important;
-    text-align: left;
-    margin-bottom: 8px;
-  }
+.webdav-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
 
-  .webdav-form :deep(.el-form-item__content) {
-    margin-left: 0 !important;
-  }
+.webdav-card-header h3 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
 
-  .webdav-form :deep(.el-button) {
-    width: 100%;
-    margin-bottom: 8px;
-  }
+.webdav-header-switch {
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
@@ -772,6 +775,86 @@ onMounted(() => {
 
   .backup-card :deep(.el-button) {
     width: 100%;
+  }
+
+  /* WebDAV 卡片头部在手机上垂直排列 */
+  .webdav-card :deep(.el-card__header) {
+    padding: 14px 16px !important;
+  }
+
+  .webdav-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .webdav-card-header h3 {
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .webdav-header-switch {
+    align-self: flex-end;
+  }
+
+  /* 隐藏开关的文字标签 */
+  .webdav-header-switch :deep(.el-switch__label) {
+    display: none !important;
+  }
+
+  /* 表单优化 */
+  .webdav-form {
+    margin-top: 12px;
+  }
+
+  .webdav-form :deep(.el-form-item) {
+    display: flex !important;
+    flex-direction: column !important;
+    margin-bottom: 16px;
+    align-items: flex-start !important;
+  }
+
+  .webdav-form :deep(.el-form-item__label) {
+    width: 100% !important;
+    text-align: left !important;
+    margin-bottom: 8px !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-bottom: 0 !important;
+    padding-top: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    float: none !important;
+    position: static !important;
+    display: block !important;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .webdav-form :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+    width: 100% !important;
+    flex: 1;
+    display: block;
+  }
+
+  .webdav-form :deep(.el-input),
+  .webdav-form :deep(.el-input-number) {
+    width: 100% !important;
+  }
+
+  .webdav-form :deep(.el-button) {
+    width: 100%;
+    margin-bottom: 8px;
+    margin-right: 0 !important;
+  }
+
+  .webdav-form :deep(.el-button + .el-button) {
+    margin-left: 0 !important;
+  }
+
+  .backup-description {
+    font-size: 13px;
   }
 }
 </style>
