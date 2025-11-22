@@ -40,7 +40,7 @@
       <template #header>
         <h3>版本信息</h3>
       </template>
-      <p>当前版本：<strong>1.0.0</strong></p>
+      <p>当前版本：<strong>1.1.0</strong></p>
       <p class="copyright">© {{ getShanghaiYear() }} LiteMark. All rights reserved.</p>
 
     </el-card>
