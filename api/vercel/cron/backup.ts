@@ -57,12 +57,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const filename = `litemark-backup-${getShanghaiDateString()}.json`;
     const filePath = webdavConfig.path || 'litemark-backup/';
     
-    // 如果路径是目录，添加文件名
-    const finalPath = filePath.endsWith('/') 
-      ? `${filePath}${filename}` 
-      : filePath.includes('.json') 
-        ? filePath 
-        : `${filePath}/${filename}`;
+    // 添加文件名
+    const finalPath = `${filePath}/${filename}`;
+
     
     await uploadToWebDAV(
       { ...webdavConfig, path: finalPath },

@@ -223,23 +223,26 @@ export async function testWebDAVConnection(config: WebDAVConfig): Promise<boolea
  */
 export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
   const { url, username, password, path = 'litemark-backup/' } = config;
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
 
-  // 确定目录路径
-  const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
-  const fullUrl = `${baseUrl}${dirPath.startsWith('/') ? dirPath : '/' + dirPath}`;
-
+  // 确保 URL 以 / 结尾
+  const baseUrl = url.endsWith('/') ? url : `${url}/`;
+  
+  // 构建完整路径（如果 path 存在，确保它不重复）
+  const fullUrl = `${baseUrl}${path.startsWith('/') ? path.slice(1) : path}`;
+  
+  // 基本身份验证
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
-
+  
   try {
+    // 发送 PROPFIND 请求来列出 WebDAV 目录中的文件
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 超时 15 秒
 
     const response = await fetch(fullUrl, {
       method: 'PROPFIND',
       headers: {
         'Authorization': `Basic ${auth}`,
-        'Depth': '1',
+        'Depth': '1', // 列出当前目录中的所有文件
         'User-Agent': 'LiteMark/1.0'
       },
       signal: controller.signal
@@ -248,44 +251,45 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      console.error(`WebDAV 请求失败: ${response.status} ${response.statusText}`);
       return [];
     }
 
     const xmlText = await response.text();
     const files: Array<{ name: string; lastModified: Date }> = [];
 
-    // 简单的 XML 解析，提取备份文件
+    // 匹配文件名（这里假设备份文件是以 litemark-backup- 开头并以 .json 结尾）
     const filePattern = /<d:href>([^<]+litemark-backup-[^<]+\.json)<\/d:href>/g;
     const datePattern = /<d:getlastmodified>([^<]+)<\/d:getlastmodified>/g;
 
     let match;
     const hrefs: string[] = [];
+
+    // 提取文件路径并匹配符合备份规则的文件名
     while ((match = filePattern.exec(xmlText)) !== null) {
       const href = decodeURIComponent(match[1]);
-      // 移除目录路径前缀，只保留文件名
-      const fileName = href.replace(dirPath, '').replace(/^\//, '');
+      const fileName = href.replace(fullUrl, '').replace(/^\//, ''); // 移除路径，只保留文件名
       if (fileName.startsWith('litemark-backup-') && fileName.endsWith('.json')) {
         hrefs.push(fileName);
       }
     }
 
-    // 尝试提取日期信息（简化处理）
+    // 提取日期并将文件添加到文件列表
     for (const fileName of hrefs) {
-      // 从文件名提取日期：litemark-backup-2025-12-13-14-42-47.json
       const dateMatch = fileName.match(/litemark-backup-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\.json/);
       if (dateMatch) {
-        const dateString = dateMatch[1].replace(/-/g, ':'); // 转换成有效的日期格式
+        const dateString = dateMatch[1].replace(/-/g, ':'); // 转换为有效的日期格式
         const date = new Date(dateString);
         files.push({ name: fileName, lastModified: date });
       }
     }
 
-    // 按日期排序，最新的在前
+    // 按照最后修改日期排序，最新的排在前面
     files.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
 
     return files;
   } catch (error) {
-    console.error('列出备份文件失败:', error);
+    console.error('列出 WebDAV 文件时出错:', error);
     return [];
   }
 }
