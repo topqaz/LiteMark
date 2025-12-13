@@ -314,17 +314,17 @@ export async function testWebDAVConnection(config: WebDAVConfig): Promise<boolea
 export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
   const { url, username, password, path = 'litemark-backup/' } = config;
   const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  
+
   // 确定目录路径
   const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
   const fullUrl = `${baseUrl}${dirPath.startsWith('/') ? dirPath : '/' + dirPath}`;
-  
+
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
-  
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
-    
+
     const response = await fetch(fullUrl, {
       method: 'PROPFIND',
       headers: {
@@ -334,20 +334,20 @@ export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ nam
       },
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) {
       return [];
     }
-    
+
     const xmlText = await response.text();
     const files: Array<{ name: string; lastModified: Date }> = [];
-    
+
     // 简单的 XML 解析，提取备份文件
     const filePattern = /<d:href>([^<]+litemark-backup-[^<]+\.json)<\/d:href>/g;
     const datePattern = /<d:getlastmodified>([^<]+)<\/d:getlastmodified>/g;
-    
+
     let match;
     const hrefs: string[] = [];
     while ((match = filePattern.exec(xmlText)) !== null) {
@@ -358,25 +358,67 @@ export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ nam
         hrefs.push(fileName);
       }
     }
-    
+
     // 尝试提取日期信息（简化处理）
     for (const fileName of hrefs) {
-      // 从文件名提取日期：litemark-backup-2024-01-01.json
-      console.log('Found backup file:', fileName);
-      const dateMatch = fileName.match(/litemark-backup-(\d{4}-\d{2}-\d{2})\.json/);
+      // 从文件名提取日期：litemark-backup-2025-12-13-14-42-47.json
+      const dateMatch = fileName.match(/litemark-backup-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\.json/);
       if (dateMatch) {
-        const date = new Date(dateMatch[1] + 'T00:00:00Z');
+        const dateString = dateMatch[1].replace(/-/g, ':'); // 转换成有效的日期格式
+        const date = new Date(dateString);
         files.push({ name: fileName, lastModified: date });
       }
     }
-    
+
     // 按日期排序，最新的在前
     files.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
-    
+
     return files;
   } catch (error) {
     console.error('列出备份文件失败:', error);
     return [];
+  }
+}
+
+/**
+ * 清理旧备份文件（保留最近7天的备份）
+ */
+export async function cleanupOldBackups(config: WebDAVConfig): Promise<number> {
+  const daysToKeep = config.keepBackups ?? 7;
+
+  // 如果设置为 0，表示不限制，不清理
+  if (config.keepBackups === 0) {
+    return 0;
+  }
+
+  try {
+    const files = await listBackupFiles(config);
+
+    // 获取当前日期
+    const currentDate = new Date();
+
+    // 删除超过时间的文件
+    let deletedCount = 0;
+    const { path = 'litemark-backup/' } = config;
+    const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
+
+    for (const file of files) {
+      const fileDate = file.lastModified;
+      const diffTime = currentDate.getTime() - fileDate.getTime();
+      const diffDays = diffTime / (1000 * 3600 * 24); // 计算文件与当前日期的天数差
+
+      if (diffDays > daysToKeep) {
+        // 删除超过时间的文件
+        const filePath = `${dirPath}${file.name}`;
+        await deleteWebDAVFile(config, filePath);
+        deletedCount++;
+      }
+    }
+
+    return deletedCount;
+  } catch (error) {
+    console.error('清理旧备份失败:', error);
+    return 0;
   }
 }
 
@@ -410,47 +452,3 @@ export async function deleteWebDAVFile(config: WebDAVConfig, filePath: string): 
     throw new Error(`删除文件失败 (${response.status}): ${errorText}`);
   }
 }
-
-/**
- * 清理旧备份文件
- */
-export async function cleanupOldBackups(config: WebDAVConfig): Promise<number> {
-  const keepBackups = config.keepBackups ?? 7;
-  
-  // 如果设置为 0，表示不限制，不清理
-  if (keepBackups === 0) {
-    return 0;
-  }
-  
-  try {
-    const files = await listBackupFiles(config);
-    
-    // 如果文件数量不超过保留数量，不需要清理
-    if (files.length <= keepBackups) {
-      return 0;
-    }
-    
-    // 删除超出保留数量的旧文件
-    const filesToDelete = files.slice(keepBackups);
-    let deletedCount = 0;
-    
-    const { path = 'litemark-backup/' } = config;
-    const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
-    
-    for (const file of filesToDelete) {
-      try {
-        const filePath = `${dirPath}${file.name}`;
-        await deleteWebDAVFile(config, filePath);
-        deletedCount++;
-      } catch (error) {
-        console.error(`删除备份文件失败: ${file.name}`, error);
-      }
-    }
-    
-    return deletedCount;
-  } catch (error) {
-    console.error('清理旧备份失败:', error);
-    return 0;
-  }
-}
-
