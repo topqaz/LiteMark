@@ -69,9 +69,7 @@ async function ensureDirectoryExists(
   }
 }
 
-/**
- * 上传文件到 WebDAV（带重试机制）
- */
+
 async function uploadWithRetry(
   fullUrl: string,
   auth: string,

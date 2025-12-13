@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getStorageConfig } from '../_lib/storage.js';
-import { uploadToWebDAV, cleanupOldBackups, type WebDAVConfig } from '../_lib/webdav.js';
+import { uploadToWebDAV, listWebDAVFiles,deleteWebDAVFile, type WebDAVConfig } from '../_lib/webdav.js';
 import { exportBackupData } from '../backup/export.js';
 import { getShanghaiDateString, getShanghaiISOString } from '../_lib/date.js';
 
@@ -69,17 +69,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       content,
       finalPath
     );
-    
+    filelist = await listWebDAVFiles(webdavConfig);
+    console.log('当前备份文件列表:', filelist);
     // 清理旧备份文件
     let deletedCount = 0;
-    if (webdavConfig.keepBackups !== undefined && webdavConfig.keepBackups > 0) {
-      try {
-        deletedCount = await cleanupOldBackups(webdavConfig);
-      } catch (error) {
-        console.error('清理旧备份失败:', error);
-        // 清理失败不影响备份流程
-      }
-    }
+    // if (webdavConfig.keepBackups !== undefined && webdavConfig.keepBackups > 0) {
+    //   try {
+    //     deletedCount = await cleanupOldBackups(webdavConfig);
+    //   } catch (error) {
+    //     console.error('清理旧备份失败:', error);
+    //     // 清理失败不影响备份流程
+    //   }
+    // }
     
     return res.status(200).json({ 
       success: true,
