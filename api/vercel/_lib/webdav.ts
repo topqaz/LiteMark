@@ -253,7 +253,7 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
 
     const xmlText = await response.text();
     const files: Array<{ name: string; lastModified: Date }> = [];
-
+    console.log('WebDAV 目录响应:', xmlText);
     // 匹配文件名和最后修改日期
     const filePattern = /<d:href>([^<]+litemark-backup-[^<]+\.json)<\/d:href>/g;
     const datePattern = /<d:getlastmodified>([^<]+)<\/d:getlastmodified>/g;
