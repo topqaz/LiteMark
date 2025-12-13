@@ -224,9 +224,9 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
   const { url, username, password, path = 'litemark-backup/' } = config;
 
   const baseUrl = url.endsWith('/') ? url : `${url}/`;
-  path = path.startsWith('/') ? path : `/${path}`;
+  const path1 = path.endsWith('/') ? path : `/${path}`;
 
-  const fullUrl = `${baseUrl}${path.startsWith('/') ? path.slice(1) : path}`;
+  const fullUrl = `${baseUrl}${path1.startsWith('/') ? path1.slice(1) : path1}`;
   
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
   
