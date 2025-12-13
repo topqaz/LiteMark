@@ -70,189 +70,101 @@ async function ensureDirectoryExists(
 }
 
 
-async function uploadWithRetry(
-  fullUrl: string,
-  auth: string,
+export async function uploadToWebDAV(
+  config: WebDAVConfig,
   content: string,
+  filename?: string,
   maxRetries: number = 3
-): Promise<Response> {
-  let lastError: Error | null = null;
-  let lastResponse: Response | null = null;
+): Promise<void> {
+  const { url, username, password, path = 'litemark-backup/' } = config;
+
+  // 确保 baseUrl 不以 / 结尾
+  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
   
+  // 构建文件路径
+  let filePath: string = filename || path;
+
+  // 确保 filePath 以 / 开头
+  if (!filePath.startsWith('/')) {
+    filePath = '/' + filePath;
+  }
+
+  // 构建完整 URL
+  const fullUrl = `${baseUrl}${filePath}`;
+
+  // 创建 Basic Auth header
+  const auth = Buffer.from(`${username}:${password}`).toString('base64');
+
+  // 确保目录存在
+  await ensureDirectoryExists(baseUrl, auth, filePath);
+
+  // 请求头构建
   const contentBytes = Buffer.from(content, 'utf-8');
   const contentLength = contentBytes.length;
   
+  const headers = {
+    'Authorization': `Basic ${auth}`,
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': contentLength.toString(),
+    'User-Agent': 'LiteMark/1.0'
+  };
+
+  console.log(`[WebDAV] 开始上传文件到: ${fullUrl}`);
+  
+  // 重试机制
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     let timeoutId: NodeJS.Timeout | null = null;
     try {
       const controller = new AbortController();
       timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
       
-      // 构建请求头
-      // 某些 WebDAV 服务器对请求头很敏感，需要精确设置
-      const headers: Record<string, string> = {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json; charset=utf-8',
-        'Content-Length': contentLength.toString(), // 必须准确，使用字节长度
-        'User-Agent': 'LiteMark/1.0'
-      };
-      
-      // 使用字符串作为 body（fetch 会自动编码为 UTF-8）
-      // 某些 WebDAV 服务器对 Buffer 的处理可能有问题，使用字符串更兼容
+      // 发起上传请求
       const response = await fetch(fullUrl, {
         method: 'PUT',
         headers,
-        body: content, // 使用原始字符串，fetch 会自动处理编码
+        body: content,
         signal: controller.signal
       });
-      
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      
-      // 检查响应状态码，504 (Gateway Timeout) 和 502 (Bad Gateway) 应该重试
-      if (response.status === 504 || response.status === 502 || response.status === 503) {
-        lastResponse = response;
-        const responseText = await response.text().catch(() => '');
-        const isGatewayTimeout = response.status === 504 || 
-                                 responseText.includes('504') || 
-                                 responseText.includes('Gateway Time-out') ||
-                                 responseText.includes('Gateway Timeout');
-        
+
+      clearTimeout(timeoutId); // 清理超时
+
+      // 判断是否是网络或网关相关错误，进行重试
+      if ([504, 502, 503].includes(response.status)) {
+        const errorText = await response.text();
         if (attempt < maxRetries) {
           const waitTime = attempt * 3000; // 递增等待时间：3s, 6s, 9s
           console.warn(`收到网关超时错误 (${response.status})，${waitTime}ms 后重试 (${attempt}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
           continue;
         } else {
-          throw new Error(`网关超时 (${response.status})：WebDAV 服务器响应超时，请检查服务器状态或网络连接`);
+          throw new Error(`网关超时 (${response.status}): ${errorText}`);
         }
       }
-      
-      // 如果响应不成功但不是网关错误，记录详细信息并返回
-      if (!response.ok && response.status !== 504 && response.status !== 502 && response.status !== 503) {
-        const errorText = await response.text().catch(() => '无法读取错误信息');
-        console.error(`[WebDAV] 上传失败 (${response.status}):`, {
-          status: response.status,
-          statusText: response.statusText,
-          url: fullUrl,
-          error: errorText.substring(0, 500) // 限制错误文本长度
-        });
-        return response;
+
+      // 如果响应不成功，但不是网关错误
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`上传失败 (${response.status}): ${errorText.substring(0, 200)}`);
       }
-      
-      // 成功响应
-      console.log(`[WebDAV] 上传成功 (${response.status}): ${fullUrl}`);
-      return response;
+
+      console.log(`[WebDAV] 上传成功: ${fullUrl}`);
+      return;
+
     } catch (error: any) {
-      // 清理 timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
+      // 处理上传时的网络错误或超时错误
+      if (attempt === maxRetries) {
+        console.error(`上传失败，最大重试次数已达 (${maxRetries})`);
+        throw error;
       }
-      
-      lastError = error;
-      
-      // 检查是否是超时错误（AbortError）
-      const isAbortError = error.name === 'AbortError' || 
-                          error.message?.includes('aborted') ||
-                          error.message?.includes('AbortError');
-      
-      // 检查是否是网络连接错误
-      const isNetworkError = error.code === 'UND_ERR_SOCKET' ||
-                            error.message?.includes('fetch failed') ||
-                            error.message?.includes('other side closed') ||
-                            error.message?.includes('ECONNREFUSED') ||
-                            error.message?.includes('ETIMEDOUT') ||
-                            error.message?.includes('ENOTFOUND');
-      
-      // 如果是超时或网络错误且还有重试机会，等待后重试
-      if (attempt < maxRetries && (isAbortError || isNetworkError)) {
-        const waitTime = attempt * 3000; // 递增等待时间：3s, 6s, 9s
-        const errorType = isAbortError ? '超时' : '网络连接';
-        console.warn(`上传失败（${errorType}），${waitTime}ms 后重试 (${attempt}/${maxRetries}):`, error.message || error.name);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        continue;
-      }
-      
-      // 如果是最后一次尝试且是超时错误，提供更友好的错误消息
-      if (attempt === maxRetries && isAbortError) {
-        throw new Error(`上传超时：在 ${maxRetries} 次尝试后仍无法完成上传，请检查网络连接或 WebDAV 服务器状态`);
-      }
-      
-      // 如果不是可重试的错误或没有重试机会了，直接抛出
-      throw error;
+
+      const waitTime = attempt * 3000; // 递增等待时间：3s, 6s, 9s
+      const errorMessage = error.message || error.name || '未知错误';
+      console.warn(`上传失败 (${errorMessage})，${waitTime}ms 后重试 (${attempt}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
   }
-  
-  // 所有重试都失败了
-  if (lastResponse) {
-    throw new Error(`上传失败：网关错误 (${lastResponse.status})`);
-  }
-  throw lastError || new Error('上传失败：未知错误');
-}
 
-/**
- * 上传文件到 WebDAV
- */
-export async function uploadToWebDAV(
-  config: WebDAVConfig,
-  content: string,
-  filename?: string
-): Promise<void> {
-  const { url, username, password, path = 'litemark-backup/' } = config;
-  
-  // 确保 baseUrl 不以 / 结尾
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  
-  // 构建文件路径
-  let filePath: string;
-  if (filename) {
-    // 如果提供了 filename，使用它（可能已经包含完整路径）
-    filePath = filename;
-  } else {
-    // 否则使用 path
-    filePath = path;
-  }
-  
-  // 确保 filePath 以 / 开头
-  if (!filePath.startsWith('/')) {
-    filePath = '/' + filePath;
-  }
-  
-  // 构建完整 URL
-  // 对于 WebDAV，通常路径不需要编码，但某些服务器可能需要
-  // 先尝试不编码，如果失败可以尝试编码
-  const fullUrl = `${baseUrl}${filePath}`;
-  
-  console.log(`[WebDAV] 上传文件到: ${fullUrl}`);
-  console.log(`[WebDAV] 文件路径: ${filePath}`);
-  console.log(`[WebDAV] Base URL: ${baseUrl}`);
-  
-  // 创建 Basic Auth header
-  const auth = Buffer.from(`${username}:${password}`).toString('base64');
-  
-  // 确保目录存在（使用原始路径，不编码）
-  await ensureDirectoryExists(baseUrl, auth, filePath);
-  
-  // 使用重试机制上传
-  console.log(`[WebDAV] 开始上传，内容大小: ${Buffer.from(content, 'utf-8').length} 字节`);
-  const response = await uploadWithRetry(fullUrl, auth, content);
-  
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '无法读取错误信息');
-    const errorDetails = {
-      status: response.status,
-      statusText: response.statusText,
-      url: fullUrl,
-      error: errorText.substring(0, 500)
-    };
-    console.error(`[WebDAV] 上传最终失败:`, errorDetails);
-    throw new Error(`WebDAV 上传失败 (${response.status}): ${errorText.substring(0, 200)}`);
-  }
-  
-  console.log(`[WebDAV] 上传完成: ${fullUrl}`);
+  throw new Error('上传失败：未知错误');
 }
 
 /**
