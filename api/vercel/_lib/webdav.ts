@@ -362,6 +362,7 @@ export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ nam
     // 尝试提取日期信息（简化处理）
     for (const fileName of hrefs) {
       // 从文件名提取日期：litemark-backup-2024-01-01.json
+      console.log('Found backup file:', fileName);
       const dateMatch = fileName.match(/litemark-backup-(\d{4}-\d{2}-\d{2})\.json/);
       if (dateMatch) {
         const date = new Date(dateMatch[1] + 'T00:00:00Z');
