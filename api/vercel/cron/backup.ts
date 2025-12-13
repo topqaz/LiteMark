@@ -69,7 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       content,
       finalPath
     );
-    filelist = await listWebDAVFiles(webdavConfig);
+    const filelist = await listWebDAVFiles(webdavConfig);
     console.log('当前备份文件列表:', filelist);
     // 清理旧备份文件
     let deletedCount = 0;
