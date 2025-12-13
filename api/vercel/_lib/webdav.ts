@@ -311,7 +311,7 @@ export async function testWebDAVConnection(config: WebDAVConfig): Promise<boolea
 /**
  * 列出 WebDAV 目录中的备份文件
  */
-export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
+export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
   const { url, username, password, path = 'litemark-backup/' } = config;
   const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
 
@@ -380,47 +380,6 @@ export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ nam
   }
 }
 
-/**
- * 清理旧备份文件（保留最近7天的备份）
- */
-export async function cleanupOldBackups(config: WebDAVConfig): Promise<number> {
-  const daysToKeep = config.keepBackups ?? 7;
-
-  // 如果设置为 0，表示不限制，不清理
-  if (config.keepBackups === 0) {
-    return 0;
-  }
-
-  try {
-    const files = await listBackupFiles(config);
-
-    // 获取当前日期
-    const currentDate = new Date();
-
-    // 删除超过时间的文件
-    let deletedCount = 0;
-    const { path = 'litemark-backup/' } = config;
-    const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
-
-    for (const file of files) {
-      const fileDate = file.lastModified;
-      const diffTime = currentDate.getTime() - fileDate.getTime();
-      const diffDays = diffTime / (1000 * 3600 * 24); // 计算文件与当前日期的天数差
-
-      if (diffDays > daysToKeep) {
-        // 删除超过时间的文件
-        const filePath = `${dirPath}${file.name}`;
-        await deleteWebDAVFile(config, filePath);
-        deletedCount++;
-      }
-    }
-
-    return deletedCount;
-  } catch (error) {
-    console.error('清理旧备份失败:', error);
-    return 0;
-  }
-}
 
 /**
  * 删除 WebDAV 文件
