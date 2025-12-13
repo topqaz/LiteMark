@@ -84,7 +84,6 @@ export async function uploadToWebDAV(
   // 构建文件路径
   let filePath: string = filename || path;
 
-  // 确保 filePath 以 / 开头
   if (!filePath.startsWith('/')) {
     filePath = '/' + filePath;
   }
@@ -224,13 +223,11 @@ export async function testWebDAVConnection(config: WebDAVConfig): Promise<boolea
 export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
   const { url, username, password, path = 'litemark-backup/' } = config;
 
-  // 确保 URL 以 / 结尾
   const baseUrl = url.endsWith('/') ? url : `${url}/`;
-  
-  // 构建完整路径（如果 path 存在，确保它不重复）
+  path = path.startsWith('/') ? path : `/${path}`;
+
   const fullUrl = `${baseUrl}${path.startsWith('/') ? path.slice(1) : path}`;
   
-  // 基本身份验证
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
   
   try {
@@ -249,7 +246,6 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
     });
 
     clearTimeout(timeoutId);
-
     if (!response.ok) {
       console.error(`WebDAV 请求失败: ${response.status} ${response.statusText}`);
       return [];
@@ -258,7 +254,7 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
     const xmlText = await response.text();
     const files: Array<{ name: string; lastModified: Date }> = [];
 
-    // 匹配文件名（这里假设备份文件是以 litemark-backup- 开头并以 .json 结尾）
+    // 匹配文件名和最后修改日期
     const filePattern = /<d:href>([^<]+litemark-backup-[^<]+\.json)<\/d:href>/g;
     const datePattern = /<d:getlastmodified>([^<]+)<\/d:getlastmodified>/g;
 
