@@ -253,36 +253,68 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
 
     const xmlText = await response.text();
     const files: Array<{ name: string; lastModified: Date }> = [];
-    console.log('WebDAV 目录响应:', xmlText);
-    // 匹配文件名和最后修改日期
-    const filePattern = /<d:href>([^<]+litemark-backup-[^<]+\.json)<\/d:href>/g;
-    const datePattern = /<d:getlastmodified>([^<]+)<\/d:getlastmodified>/g;
+    
+    // 匹配每个 <D:response> 块（支持大小写不敏感的命名空间前缀）
+    const responsePattern = /<(?:d|D):response[^>]*>([\s\S]*?)<\/(?:d|D):response>/gi;
+    let responseMatch;
 
-    let match;
-    const hrefs: string[] = [];
-
-    // 提取文件路径并匹配符合备份规则的文件名
-    while ((match = filePattern.exec(xmlText)) !== null) {
-      const href = decodeURIComponent(match[1]);
-      const fileName = href.replace(fullUrl, '').replace(/^\//, ''); // 移除路径，只保留文件名
-      if (fileName.startsWith('litemark-backup-') && fileName.endsWith('.json')) {
-        hrefs.push(fileName);
+    while ((responseMatch = responsePattern.exec(xmlText)) !== null) {
+      const responseBlock = responseMatch[1];
+      
+      // 提取 href（文件路径）
+      const hrefMatch = responseBlock.match(/<(?:d|D):href[^>]*>([^<]+)<\/(?:d|D):href>/i);
+      if (!hrefMatch) continue;
+      
+      const href = decodeURIComponent(hrefMatch[1]);
+      
+      // 提取文件名（从 displayname 或 href 中获取）
+      let fileName = '';
+      const displayNameMatch = responseBlock.match(/<(?:d|D):displayname[^>]*>([^<]+)<\/(?:d|D):displayname>/i);
+      if (displayNameMatch) {
+        fileName = displayNameMatch[1];
+      } else {
+        // 如果没有 displayname，从 href 中提取文件名
+        const parts = href.split('/');
+        fileName = parts[parts.length - 1];
       }
-    }
-
-    // 提取日期并将文件添加到文件列表
-    for (const fileName of hrefs) {
-      const dateMatch = fileName.match(/litemark-backup-(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})\.json/);
-      if (dateMatch) {
-        const dateString = dateMatch[1].replace(/-/g, ':'); // 转换为有效的日期格式
-        const date = new Date(dateString);
-        files.push({ name: fileName, lastModified: date });
+      
+      // 只处理备份文件
+      if (!fileName.startsWith('litemark-backup-') || !fileName.endsWith('.json')) {
+        continue;
       }
+      
+      // 提取最后修改时间
+      let lastModified: Date;
+      const lastModifiedMatch = responseBlock.match(/<(?:d|D):getlastmodified[^>]*>([^<]+)<\/(?:d|D):getlastmodified>/i);
+      
+      if (lastModifiedMatch) {
+        // 使用 XML 中的 lastmodified 字段
+        lastModified = new Date(lastModifiedMatch[1]);
+      } else {
+        // 如果没有 lastmodified，尝试从文件名中解析日期
+        const dateMatch = fileName.match(/litemark-backup-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})\.json/);
+        if (dateMatch) {
+          const [, year, month, day, hour, minute, second] = dateMatch;
+          lastModified = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+        } else {
+          // 无法解析日期，使用当前时间
+          lastModified = new Date();
+        }
+      }
+      
+      // 验证日期是否有效
+      if (isNaN(lastModified.getTime())) {
+        console.warn(`无效的日期格式: ${fileName}`);
+        continue;
+      }
+      
+      files.push({ name: fileName, lastModified });
     }
 
     // 按照最后修改日期排序，最新的排在前面
     files.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
 
+    // console.log(`找到 ${files.length} 个备份文件`);
     return files;
   } catch (error) {
     console.error('列出 WebDAV 文件时出错:', error);
@@ -295,29 +327,96 @@ export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ nam
  * 删除 WebDAV 文件
  */
 export async function deleteWebDAVFile(config: WebDAVConfig, filePath: string): Promise<void> {
-  const { url, username, password } = config;
+  const { url, username, password, path = 'litemark-backup/' } = config;
   const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  const fullUrl = `${baseUrl}${filePath.startsWith('/') ? filePath : '/' + filePath}`;
+  
+  // 构建完整的文件路径
+  let fullPath = filePath;
+  
+  // 如果 filePath 只是文件名（不包含路径），则添加备份路径
+  if (!filePath.includes('/') || filePath === path) {
+    const backupPath = path.endsWith('/') ? path : `${path}/`;
+    fullPath = `${backupPath}${filePath}`;
+  }
+  
+  const fullUrl = `${baseUrl}${fullPath.startsWith('/') ? fullPath : '/' + fullPath}`;
   
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
   
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
   
-  const response = await fetch(fullUrl, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'User-Agent': 'LiteMark/1.0'
-    },
-    signal: controller.signal
-  });
+  try {
+    const response = await fetch(fullUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'User-Agent': 'LiteMark/1.0'
+      },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    // 204 (No Content) 或 404 (Not Found) 都表示成功
+    if (response.status !== 204 && response.status !== 404) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`删除文件失败 (${response.status}): ${errorText}`);
+    }
+    
+    console.log(`已删除备份文件: ${fullPath}`);
+  } catch (error: any) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    throw error;
+  }
+}
+
+/**
+ * 清理旧的备份文件，保留指定数量的最新备份
+ * @param config WebDAV 配置
+ * @returns 删除的文件数量
+ */
+export async function cleanupOldBackups(config: WebDAVConfig): Promise<number> {
+  const { keepBackups = 7 } = config;
   
-  clearTimeout(timeoutId);
+  // 如果 keepBackups 为 0 或未定义，表示不限制备份数量
+  if (!keepBackups || keepBackups <= 0) {
+    console.log('未设置备份数量限制，跳过清理');
+    return 0;
+  }
   
-  // 204 (No Content) 或 404 (Not Found) 都表示成功
-  if (response.status !== 204 && response.status !== 404) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`删除文件失败 (${response.status}): ${errorText}`);
+  try {
+    // 获取所有备份文件列表
+    const files = await listWebDAVFiles(config);
+    
+    if (files.length <= keepBackups) {
+      console.log(`当前备份文件数量 (${files.length}) 未超过限制 (${keepBackups})，无需清理`);
+      return 0;
+    }
+    
+    // 计算需要删除的文件数量
+    const filesToDelete = files.slice(keepBackups);
+    console.log(`需要删除 ${filesToDelete.length} 个旧备份文件，保留最新的 ${keepBackups} 个`);
+    
+    let deletedCount = 0;
+    
+    // 逐个删除旧备份文件
+    for (const file of filesToDelete) {
+      try {
+        await deleteWebDAVFile(config, file.name);
+        deletedCount++;
+      } catch (error) {
+        console.error(`删除文件 ${file.name} 失败:`, error);
+        // 继续删除其他文件，不中断流程
+      }
+    }
+    
+    console.log(`成功删除 ${deletedCount} 个旧备份文件`);
+    return deletedCount;
+  } catch (error) {
+    console.error('清理旧备份时出错:', error);
+    throw error;
   }
 }
