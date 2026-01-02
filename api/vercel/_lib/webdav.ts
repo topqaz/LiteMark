@@ -69,192 +69,101 @@ async function ensureDirectoryExists(
   }
 }
 
-/**
- * 上传文件到 WebDAV（带重试机制）
- */
-async function uploadWithRetry(
-  fullUrl: string,
-  auth: string,
+
+export async function uploadToWebDAV(
+  config: WebDAVConfig,
   content: string,
+  filename?: string,
   maxRetries: number = 3
-): Promise<Response> {
-  let lastError: Error | null = null;
-  let lastResponse: Response | null = null;
+): Promise<void> {
+  const { url, username, password, path = 'litemark-backup/' } = config;
+
+  // 确保 baseUrl 不以 / 结尾
+  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
   
+  // 构建文件路径
+  let filePath: string = filename || path;
+
+  if (!filePath.startsWith('/')) {
+    filePath = '/' + filePath;
+  }
+
+  // 构建完整 URL
+  const fullUrl = `${baseUrl}${filePath}`;
+
+  // 创建 Basic Auth header
+  const auth = Buffer.from(`${username}:${password}`).toString('base64');
+
+  // 确保目录存在
+  await ensureDirectoryExists(baseUrl, auth, filePath);
+
+  // 请求头构建
   const contentBytes = Buffer.from(content, 'utf-8');
   const contentLength = contentBytes.length;
   
+  const headers = {
+    'Authorization': `Basic ${auth}`,
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': contentLength.toString(),
+    'User-Agent': 'LiteMark/1.0'
+  };
+
+  console.log(`[WebDAV] 开始上传文件到: ${fullUrl}`);
+  
+  // 重试机制
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     let timeoutId: NodeJS.Timeout | null = null;
     try {
       const controller = new AbortController();
       timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
       
-      // 构建请求头
-      // 某些 WebDAV 服务器对请求头很敏感，需要精确设置
-      const headers: Record<string, string> = {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json; charset=utf-8',
-        'Content-Length': contentLength.toString(), // 必须准确，使用字节长度
-        'User-Agent': 'LiteMark/1.0'
-      };
-      
-      // 使用字符串作为 body（fetch 会自动编码为 UTF-8）
-      // 某些 WebDAV 服务器对 Buffer 的处理可能有问题，使用字符串更兼容
+      // 发起上传请求
       const response = await fetch(fullUrl, {
         method: 'PUT',
         headers,
-        body: content, // 使用原始字符串，fetch 会自动处理编码
+        body: content,
         signal: controller.signal
       });
-      
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      
-      // 检查响应状态码，504 (Gateway Timeout) 和 502 (Bad Gateway) 应该重试
-      if (response.status === 504 || response.status === 502 || response.status === 503) {
-        lastResponse = response;
-        const responseText = await response.text().catch(() => '');
-        const isGatewayTimeout = response.status === 504 || 
-                                 responseText.includes('504') || 
-                                 responseText.includes('Gateway Time-out') ||
-                                 responseText.includes('Gateway Timeout');
-        
+
+      clearTimeout(timeoutId); // 清理超时
+
+      // 判断是否是网络或网关相关错误，进行重试
+      if ([504, 502, 503].includes(response.status)) {
+        const errorText = await response.text();
         if (attempt < maxRetries) {
           const waitTime = attempt * 3000; // 递增等待时间：3s, 6s, 9s
           console.warn(`收到网关超时错误 (${response.status})，${waitTime}ms 后重试 (${attempt}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
           continue;
         } else {
-          throw new Error(`网关超时 (${response.status})：WebDAV 服务器响应超时，请检查服务器状态或网络连接`);
+          throw new Error(`网关超时 (${response.status}): ${errorText}`);
         }
       }
-      
-      // 如果响应不成功但不是网关错误，记录详细信息并返回
-      if (!response.ok && response.status !== 504 && response.status !== 502 && response.status !== 503) {
-        const errorText = await response.text().catch(() => '无法读取错误信息');
-        console.error(`[WebDAV] 上传失败 (${response.status}):`, {
-          status: response.status,
-          statusText: response.statusText,
-          url: fullUrl,
-          error: errorText.substring(0, 500) // 限制错误文本长度
-        });
-        return response;
+
+      // 如果响应不成功，但不是网关错误
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`上传失败 (${response.status}): ${errorText.substring(0, 200)}`);
       }
-      
-      // 成功响应
-      console.log(`[WebDAV] 上传成功 (${response.status}): ${fullUrl}`);
-      return response;
+
+      console.log(`[WebDAV] 上传成功: ${fullUrl}`);
+      return;
+
     } catch (error: any) {
-      // 清理 timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
+      // 处理上传时的网络错误或超时错误
+      if (attempt === maxRetries) {
+        console.error(`上传失败，最大重试次数已达 (${maxRetries})`);
+        throw error;
       }
-      
-      lastError = error;
-      
-      // 检查是否是超时错误（AbortError）
-      const isAbortError = error.name === 'AbortError' || 
-                          error.message?.includes('aborted') ||
-                          error.message?.includes('AbortError');
-      
-      // 检查是否是网络连接错误
-      const isNetworkError = error.code === 'UND_ERR_SOCKET' ||
-                            error.message?.includes('fetch failed') ||
-                            error.message?.includes('other side closed') ||
-                            error.message?.includes('ECONNREFUSED') ||
-                            error.message?.includes('ETIMEDOUT') ||
-                            error.message?.includes('ENOTFOUND');
-      
-      // 如果是超时或网络错误且还有重试机会，等待后重试
-      if (attempt < maxRetries && (isAbortError || isNetworkError)) {
-        const waitTime = attempt * 3000; // 递增等待时间：3s, 6s, 9s
-        const errorType = isAbortError ? '超时' : '网络连接';
-        console.warn(`上传失败（${errorType}），${waitTime}ms 后重试 (${attempt}/${maxRetries}):`, error.message || error.name);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        continue;
-      }
-      
-      // 如果是最后一次尝试且是超时错误，提供更友好的错误消息
-      if (attempt === maxRetries && isAbortError) {
-        throw new Error(`上传超时：在 ${maxRetries} 次尝试后仍无法完成上传，请检查网络连接或 WebDAV 服务器状态`);
-      }
-      
-      // 如果不是可重试的错误或没有重试机会了，直接抛出
-      throw error;
+
+      const waitTime = attempt * 3000; // 递增等待时间：3s, 6s, 9s
+      const errorMessage = error.message || error.name || '未知错误';
+      console.warn(`上传失败 (${errorMessage})，${waitTime}ms 后重试 (${attempt}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
   }
-  
-  // 所有重试都失败了
-  if (lastResponse) {
-    throw new Error(`上传失败：网关错误 (${lastResponse.status})`);
-  }
-  throw lastError || new Error('上传失败：未知错误');
-}
 
-/**
- * 上传文件到 WebDAV
- */
-export async function uploadToWebDAV(
-  config: WebDAVConfig,
-  content: string,
-  filename?: string
-): Promise<void> {
-  const { url, username, password, path = 'litemark-backup/' } = config;
-  
-  // 确保 baseUrl 不以 / 结尾
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  
-  // 构建文件路径
-  let filePath: string;
-  if (filename) {
-    // 如果提供了 filename，使用它（可能已经包含完整路径）
-    filePath = filename;
-  } else {
-    // 否则使用 path
-    filePath = path;
-  }
-  
-  // 确保 filePath 以 / 开头
-  if (!filePath.startsWith('/')) {
-    filePath = '/' + filePath;
-  }
-  
-  // 构建完整 URL
-  // 对于 WebDAV，通常路径不需要编码，但某些服务器可能需要
-  // 先尝试不编码，如果失败可以尝试编码
-  const fullUrl = `${baseUrl}${filePath}`;
-  
-  console.log(`[WebDAV] 上传文件到: ${fullUrl}`);
-  console.log(`[WebDAV] 文件路径: ${filePath}`);
-  console.log(`[WebDAV] Base URL: ${baseUrl}`);
-  
-  // 创建 Basic Auth header
-  const auth = Buffer.from(`${username}:${password}`).toString('base64');
-  
-  // 确保目录存在（使用原始路径，不编码）
-  await ensureDirectoryExists(baseUrl, auth, filePath);
-  
-  // 使用重试机制上传
-  console.log(`[WebDAV] 开始上传，内容大小: ${Buffer.from(content, 'utf-8').length} 字节`);
-  const response = await uploadWithRetry(fullUrl, auth, content);
-  
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '无法读取错误信息');
-    const errorDetails = {
-      status: response.status,
-      statusText: response.statusText,
-      url: fullUrl,
-      error: errorText.substring(0, 500)
-    };
-    console.error(`[WebDAV] 上传最终失败:`, errorDetails);
-    throw new Error(`WebDAV 上传失败 (${response.status}): ${errorText.substring(0, 200)}`);
-  }
-  
-  console.log(`[WebDAV] 上传完成: ${fullUrl}`);
+  throw new Error('上传失败：未知错误');
 }
 
 /**
@@ -311,25 +220,137 @@ export async function testWebDAVConnection(config: WebDAVConfig): Promise<boolea
 /**
  * 列出 WebDAV 目录中的备份文件
  */
-export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
+export async function listWebDAVFiles(config: WebDAVConfig): Promise<Array<{ name: string; lastModified: Date }>> {
   const { url, username, password, path = 'litemark-backup/' } = config;
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  
-  // 确定目录路径
-  const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
-  const fullUrl = `${baseUrl}${dirPath.startsWith('/') ? dirPath : '/' + dirPath}`;
+
+  const baseUrl = url.endsWith('/') ? url : `${url}/`;
+  const path1 = path.endsWith('/') ? path : `/${path}`;
+
+  const fullUrl = `${baseUrl}${path1.startsWith('/') ? path1.slice(1) : path1}`;
   
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
   
   try {
+    // 发送 PROPFIND 请求来列出 WebDAV 目录中的文件
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
-    
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 超时 15 秒
+
     const response = await fetch(fullUrl, {
       method: 'PROPFIND',
       headers: {
         'Authorization': `Basic ${auth}`,
-        'Depth': '1',
+        'Depth': '1', // 列出当前目录中的所有文件
+        'User-Agent': 'LiteMark/1.0'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      console.error(`WebDAV 请求失败: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const xmlText = await response.text();
+    const files: Array<{ name: string; lastModified: Date }> = [];
+    
+    // 匹配每个 <D:response> 块（支持大小写不敏感的命名空间前缀）
+    const responsePattern = /<(?:d|D):response[^>]*>([\s\S]*?)<\/(?:d|D):response>/gi;
+    let responseMatch;
+
+    while ((responseMatch = responsePattern.exec(xmlText)) !== null) {
+      const responseBlock = responseMatch[1];
+      
+      // 提取 href（文件路径）
+      const hrefMatch = responseBlock.match(/<(?:d|D):href[^>]*>([^<]+)<\/(?:d|D):href>/i);
+      if (!hrefMatch) continue;
+      
+      const href = decodeURIComponent(hrefMatch[1]);
+      
+      // 提取文件名（从 displayname 或 href 中获取）
+      let fileName = '';
+      const displayNameMatch = responseBlock.match(/<(?:d|D):displayname[^>]*>([^<]+)<\/(?:d|D):displayname>/i);
+      if (displayNameMatch) {
+        fileName = displayNameMatch[1];
+      } else {
+        // 如果没有 displayname，从 href 中提取文件名
+        const parts = href.split('/');
+        fileName = parts[parts.length - 1];
+      }
+      
+      // 只处理备份文件
+      if (!fileName.startsWith('litemark-backup-') || !fileName.endsWith('.json')) {
+        continue;
+      }
+      
+      // 提取最后修改时间
+      let lastModified: Date;
+      const lastModifiedMatch = responseBlock.match(/<(?:d|D):getlastmodified[^>]*>([^<]+)<\/(?:d|D):getlastmodified>/i);
+      
+      if (lastModifiedMatch) {
+        // 使用 XML 中的 lastmodified 字段
+        lastModified = new Date(lastModifiedMatch[1]);
+      } else {
+        // 如果没有 lastmodified，尝试从文件名中解析日期
+        const dateMatch = fileName.match(/litemark-backup-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})\.json/);
+        if (dateMatch) {
+          const [, year, month, day, hour, minute, second] = dateMatch;
+          lastModified = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+        } else {
+          // 无法解析日期，使用当前时间
+          lastModified = new Date();
+        }
+      }
+      
+      // 验证日期是否有效
+      if (isNaN(lastModified.getTime())) {
+        console.warn(`无效的日期格式: ${fileName}`);
+        continue;
+      }
+      
+      files.push({ name: fileName, lastModified });
+    }
+
+    // 按照最后修改日期排序，最新的排在前面
+    files.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+
+    // console.log(`找到 ${files.length} 个备份文件`);
+    return files;
+  } catch (error) {
+    console.error('列出 WebDAV 文件时出错:', error);
+    return [];
+  }
+}
+
+
+/**
+ * 删除 WebDAV 文件
+ */
+export async function deleteWebDAVFile(config: WebDAVConfig, filePath: string): Promise<void> {
+  const { url, username, password, path = 'litemark-backup/' } = config;
+  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+  
+  // 构建完整的文件路径
+  let fullPath = filePath;
+  
+  // 如果 filePath 只是文件名（不包含路径），则添加备份路径
+  if (!filePath.includes('/') || filePath === path) {
+    const backupPath = path.endsWith('/') ? path : `${path}/`;
+    fullPath = `${backupPath}${filePath}`;
+  }
+  
+  const fullUrl = `${baseUrl}${fullPath.startsWith('/') ? fullPath : '/' + fullPath}`;
+  
+  const auth = Buffer.from(`${username}:${password}`).toString('base64');
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
+  
+  try {
+    const response = await fetch(fullUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Basic ${auth}`,
         'User-Agent': 'LiteMark/1.0'
       },
       signal: controller.signal
@@ -337,119 +358,65 @@ export async function listBackupFiles(config: WebDAVConfig): Promise<Array<{ nam
     
     clearTimeout(timeoutId);
     
-    if (!response.ok) {
-      return [];
+    // 204 (No Content) 或 404 (Not Found) 都表示成功
+    if (response.status !== 204 && response.status !== 404) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`删除文件失败 (${response.status}): ${errorText}`);
     }
     
-    const xmlText = await response.text();
-    const files: Array<{ name: string; lastModified: Date }> = [];
-    
-    // 简单的 XML 解析，提取备份文件
-    const filePattern = /<d:href>([^<]+litemark-backup-[^<]+\.json)<\/d:href>/g;
-    const datePattern = /<d:getlastmodified>([^<]+)<\/d:getlastmodified>/g;
-    
-    let match;
-    const hrefs: string[] = [];
-    while ((match = filePattern.exec(xmlText)) !== null) {
-      const href = decodeURIComponent(match[1]);
-      // 移除目录路径前缀，只保留文件名
-      const fileName = href.replace(dirPath, '').replace(/^\//, '');
-      if (fileName.startsWith('litemark-backup-') && fileName.endsWith('.json')) {
-        hrefs.push(fileName);
-      }
+    console.log(`已删除备份文件: ${fullPath}`);
+  } catch (error: any) {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
     }
-    
-    // 尝试提取日期信息（简化处理）
-    for (const fileName of hrefs) {
-      // 从文件名提取日期：litemark-backup-2024-01-01.json
-      const dateMatch = fileName.match(/litemark-backup-(\d{4}-\d{2}-\d{2})\.json/);
-      if (dateMatch) {
-        const date = new Date(dateMatch[1] + 'T00:00:00Z');
-        files.push({ name: fileName, lastModified: date });
-      }
-    }
-    
-    // 按日期排序，最新的在前
-    files.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
-    
-    return files;
-  } catch (error) {
-    console.error('列出备份文件失败:', error);
-    return [];
+    throw error;
   }
 }
 
 /**
- * 删除 WebDAV 文件
- */
-export async function deleteWebDAVFile(config: WebDAVConfig, filePath: string): Promise<void> {
-  const { url, username, password } = config;
-  const baseUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-  const fullUrl = `${baseUrl}${filePath.startsWith('/') ? filePath : '/' + filePath}`;
-  
-  const auth = Buffer.from(`${username}:${password}`).toString('base64');
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
-  
-  const response = await fetch(fullUrl, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'User-Agent': 'LiteMark/1.0'
-    },
-    signal: controller.signal
-  });
-  
-  clearTimeout(timeoutId);
-  
-  // 204 (No Content) 或 404 (Not Found) 都表示成功
-  if (response.status !== 204 && response.status !== 404) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`删除文件失败 (${response.status}): ${errorText}`);
-  }
-}
-
-/**
- * 清理旧备份文件
+ * 清理旧的备份文件，保留指定数量的最新备份
+ * @param config WebDAV 配置
+ * @returns 删除的文件数量
  */
 export async function cleanupOldBackups(config: WebDAVConfig): Promise<number> {
-  const keepBackups = config.keepBackups ?? 7;
+  const { keepBackups = 7 } = config;
   
-  // 如果设置为 0，表示不限制，不清理
-  if (keepBackups === 0) {
+  // 如果 keepBackups 为 0 或未定义，表示不限制备份数量
+  if (!keepBackups || keepBackups <= 0) {
+    console.log('未设置备份数量限制，跳过清理');
     return 0;
   }
   
   try {
-    const files = await listBackupFiles(config);
+    // 获取所有备份文件列表
+    const files = await listWebDAVFiles(config);
     
-    // 如果文件数量不超过保留数量，不需要清理
     if (files.length <= keepBackups) {
+      console.log(`当前备份文件数量 (${files.length}) 未超过限制 (${keepBackups})，无需清理`);
       return 0;
     }
     
-    // 删除超出保留数量的旧文件
+    // 计算需要删除的文件数量
     const filesToDelete = files.slice(keepBackups);
+    console.log(`需要删除 ${filesToDelete.length} 个旧备份文件，保留最新的 ${keepBackups} 个`);
+    
     let deletedCount = 0;
     
-    const { path = 'litemark-backup/' } = config;
-    const dirPath = path.endsWith('/') ? path : path.includes('.json') ? path.substring(0, path.lastIndexOf('/') + 1) || '/' : path;
-    
+    // 逐个删除旧备份文件
     for (const file of filesToDelete) {
       try {
-        const filePath = `${dirPath}${file.name}`;
-        await deleteWebDAVFile(config, filePath);
+        await deleteWebDAVFile(config, file.name);
         deletedCount++;
       } catch (error) {
-        console.error(`删除备份文件失败: ${file.name}`, error);
+        console.error(`删除文件 ${file.name} 失败:`, error);
+        // 继续删除其他文件，不中断流程
       }
     }
     
+    console.log(`成功删除 ${deletedCount} 个旧备份文件`);
     return deletedCount;
   } catch (error) {
-    console.error('清理旧备份失败:', error);
-    return 0;
+    console.error('清理旧备份时出错:', error);
+    throw error;
   }
 }
-

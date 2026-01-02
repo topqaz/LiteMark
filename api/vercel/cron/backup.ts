@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getStorageConfig } from '../_lib/storage.js';
-import { uploadToWebDAV, cleanupOldBackups, type WebDAVConfig } from '../_lib/webdav.js';
+import { uploadToWebDAV, listWebDAVFiles, deleteWebDAVFile, cleanupOldBackups, type WebDAVConfig } from '../_lib/webdav.js';
 import { exportBackupData } from '../backup/export.js';
 import { getShanghaiDateString, getShanghaiISOString } from '../_lib/date.js';
 
@@ -57,12 +57,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const filename = `litemark-backup-${getShanghaiDateString()}.json`;
     const filePath = webdavConfig.path || 'litemark-backup/';
     
-    // 如果路径是目录，添加文件名
-    const finalPath = filePath.endsWith('/') 
-      ? `${filePath}${filename}` 
-      : filePath.includes('.json') 
-        ? filePath 
-        : `${filePath}/${filename}`;
+    // 添加文件名
+    const finalPath = `${filePath}/${filename}`;
+
     
     await uploadToWebDAV(
       { ...webdavConfig, path: finalPath },
@@ -70,14 +67,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       finalPath
     );
     
-    // 清理旧备份文件
+    // 清理旧备份文件（实现循环备份）
     let deletedCount = 0;
     if (webdavConfig.keepBackups !== undefined && webdavConfig.keepBackups > 0) {
       try {
         deletedCount = await cleanupOldBackups(webdavConfig);
+        console.log(`清理完成，删除了 ${deletedCount} 个旧备份文件`);
       } catch (error) {
         console.error('清理旧备份失败:', error);
-        // 清理失败不影响备份流程
+        // 清理失败不影响备份流程，继续执行
       }
     }
     
@@ -85,6 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       message: '定时备份成功',
       timestamp: getShanghaiISOString(),
+      filename: filename,
       bookmarksCount: backup.bookmarks.length,
       deletedBackups: deletedCount
     });
