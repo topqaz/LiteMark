@@ -12,8 +12,8 @@
     "@aws-sdk/client-s3": "^3.678.0",
     "@element-plus/icons-vue": "^2.3.2",
     "@types/bcrypt": "^6.0.0",
-    "@vercel/blob": "^0.25.0",
-    "@vercel/postgres": "^0.5.1",
+    "@vercel/blob": "^2.0.1",
+    "@vercel/postgres": "^0.10.0",
     "ali-oss": "^6.20.0",
     "bcrypt": "^6.0.0",
     "cos-nodejs-sdk-v5": "^2.15.4",
@@ -28,13 +28,14 @@
     "@types/ali-oss": "^6.16.11",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",
-    "@vercel/node": "^3.2.8",
-    "@vitejs/plugin-vue": "^5.1.2",
+    "@vercel/node": "^3.0.1",
+    "@vitejs/plugin-vue": "^6.0.0",
     "typescript": "^5.6.3",
-    "vite": "^5.4.8"
+    "vite": "^7.3.1",
+    "wrangler": "^3.76.0"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

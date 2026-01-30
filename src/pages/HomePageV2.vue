@@ -985,7 +985,6 @@ function getFaviconUrl(url: string): string {
       <section v-if="canEdit && showForm" class="form-card">
         <header class="form-card__header">
           <h2>{{ editingId ? '编辑书签' : '新增书签' }}</h2>
-          <span>编辑模式下才可管理书签</span>
         </header>
         <form @submit.prevent="saveBookmark">
           <div class="form-grid">
