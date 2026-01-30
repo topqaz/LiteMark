@@ -96,12 +96,8 @@ const DEFAULT_TITLE = '个人书签';
 const DEFAULT_ICON = '/LiteMark.png';
 
 const themeOptions = [
-  { value: 'light', label: '晨光浅色' },
-  { value: 'twilight', label: '暮色渐变' },
-  { value: 'dark', label: '夜空深色' },
-  { value: 'forest', label: '林间绿意' },
-  { value: 'ocean', label: '深海幻境' },
-  { value: 'sunrise', label: '朝霞暖橙' }
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' }
 ];
 
 const apiBaseRaw =
@@ -221,6 +217,9 @@ async function loadSettings() {
     if (settings.theme && themeOptions.some((item) => item.value === settings.theme)) {
       currentTheme.value = settings.theme;
       selectedTheme.value = settings.theme;
+    } else {
+      currentTheme.value = themeOptions[0].value;
+      selectedTheme.value = themeOptions[0].value;
     }
     siteTitle.value = settings.siteTitle ?? DEFAULT_TITLE;
     siteIcon.value = settings.siteIcon ?? DEFAULT_ICON;
