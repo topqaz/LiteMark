@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import HomePage from './pages/HomePage.vue';
+import HomePage from './pages/HomePageV2.vue';
 import AdminLayout from './layouts/AdminLayout.vue';
 import AdminLogin from './pages/admin/Login.vue';
 import AdminOverview from './pages/admin/Overview.vue';
