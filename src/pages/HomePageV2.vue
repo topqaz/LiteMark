@@ -888,6 +888,12 @@ function getFaviconUrl(url: string): string {
     return DEFAULT_ICON;
   }
 }
+
+function openAdmin() {
+  if (typeof window !== 'undefined') {
+    window.location.href = '/admin';
+  }
+}
 </script>
 
 <template>
@@ -925,6 +931,14 @@ function getFaviconUrl(url: string): string {
           </label>
           <span v-if="themeSaving" class="theme-switcher__status">保存中...</span>
         </div>
+        <button
+          v-if="isAuthenticated"
+          class="button button--ghost"
+          type="button"
+          @click="openAdmin"
+        >
+          进入后台
+        </button>
         <button
           v-if="isAuthenticated"
           class="button edit-toggle"
