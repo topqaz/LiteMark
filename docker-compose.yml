@@ -1,23 +1,23 @@
 services:
   litemark:
-    build: .
+    image: topqaz/litemark:latest
     container_name: litemark
     restart: unless-stopped
     ports:
-      - "8080:80"  # 只开放一个端口，可改为其他端口如 3000:80
+      - "8080:80"  # 可修改为其他端口，如 3000:80
     volumes:
       - litemark-data:/app/data  # 持久化数据库
     environment:
       # JWT 密钥 (生产环境必须修改!)
       - JWT_SECRET=change-this-to-a-secure-random-string
-      # 数据库配置 (使用容器内路径)
+      # 数据库配置
       - DATABASE_URL=sqlite+aiosqlite:///./data/litemark.db
       # 默认管理员账号 (仅首次启动有效)
       - DEFAULT_ADMIN_USERNAME=admin
       - DEFAULT_ADMIN_PASSWORD=admin123
       # 调试模式
       - DEBUG=false
-      # CORS 配置 (Docker 内部使用，一般不需要修改)
+      # CORS 配置
       - CORS_ORIGINS=*
 
 volumes:
