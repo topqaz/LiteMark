@@ -8,14 +8,13 @@
         <h3>项目简介</h3>
       </template>
       <p>
-    LiteMark 是一款基于 <strong>Vue 3 + Vite</strong> 的个人书签管理应用，提供响应式双端体验、后台管理面板。</p>
-    <p>当前前端和后端（Vercel Functions + Vercel Postgres）已深度集成，只需少量配置即可Vercel 上快速运行,无需服务器。 </p>
-       <p>支持定时备份到WebDAV服务器。</p>
-       <p>支持浏览器插件。</p>
-   
+    LiteMark 是一款基于 <strong>Vue 3 + Vite + FastAPI</strong> 的个人书签管理应用，提供响应式双端体验、后台管理面板。</p>
+      <p>支持 AI 智能分类、内容摘要、语义搜索等功能。</p>
+      <p>支持定时备份到 WebDAV 服务器。</p>
+      <p>支持浏览器插件。</p>
+
     </el-card>
 
-   
 
 
     <el-card class="about-card">
@@ -40,15 +39,28 @@
       <template #header>
         <h3>版本信息</h3>
       </template>
-      <p>当前版本：<strong>1.1.0</strong></p>
-      <p class="copyright">© {{ getShanghaiYear() }} LiteMark. All rights reserved.</p>
+      <p>当前版本：<strong>{{ versionInfo?.version || '加载中...' }}</strong></p>
+      <p v-if="versionInfo?.author" class="author">作者：{{ versionInfo.author }}</p>
+      <p class="copyright">© {{ getShanghaiYear() }} LiteMark by {{ versionInfo?.author || 'topqaz' }}. All rights reserved.</p>
 
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue';
 import { getShanghaiYear } from '../../utils/date.js';
+import { versionApi, type VersionInfo } from '../../api';
+
+const versionInfo = ref<VersionInfo | null>(null);
+
+onMounted(async () => {
+  try {
+    versionInfo.value = await versionApi.get();
+  } catch (err) {
+    console.error('获取版本信息失败', err);
+  }
+});
 </script>
 
 <style scoped>

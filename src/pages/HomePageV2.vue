@@ -203,7 +203,7 @@ async function persistOrder(orderIds: string[]) {
   try {
     const response = await requestWithAuth(`${endpoint}/reorder`, {
       method: 'POST',
-      body: JSON.stringify({ order: orderIds })
+      body: JSON.stringify({ bookmark_ids: orderIds })
     });
     if (!response.ok) {
       const message = await response.text();
@@ -261,8 +261,8 @@ async function handleGroupReorder(groupKey: string, orderedIds: string[]) {
   }
 
   bookmarks.value = reordered;
-  pendingOrder.value = reordered.map((item) => item.id);
-  orderMessage.value = '排序已调整，记得保存。';
+  // 立即保存排序
+  await persistOrder(newGroup.map((item) => item.id));
 }
 
 function setupSortables() {
@@ -947,15 +947,6 @@ function openAdmin() {
           @click="toggleEditMode"
         >
           {{ isEditMode ? '退出编辑' : '进入编辑' }}
-        </button>
-        <button
-          v-if="canEdit"
-          class="button button--primary save-button"
-          type="button"
-          :disabled="orderSaving || !pendingOrder"
-          @click="() => pendingOrder && persistOrder(pendingOrder)"
-        >
-          {{ orderSaving ? '保存中...' : '保存顺序' }}
         </button>
         <button
           v-if="canEdit"

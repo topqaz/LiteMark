@@ -97,7 +97,8 @@ import {
   Upload,
   UserFilled,
   Menu,
-  InfoFilled
+  InfoFilled,
+  MagicStick
 } from '@element-plus/icons-vue';
 
 const route = useRoute();
@@ -122,6 +123,7 @@ const navItems = [
   { path: '/admin/overview', title: '概览', icon: DataBoard },
   { path: '/admin/bookmarks', title: '书签管理', icon: Collection },
   { path: '/admin/categories', title: '分类管理', icon: Document },
+  { path: '/admin/ai', title: 'AI 助手', icon: MagicStick },
   { path: '/admin/backup', title: '数据备份', icon: Upload },
   { path: '/admin/settings', title: '系统设置', icon: Setting },
   { path: '/admin/account', title: '账号管理', icon: UserFilled },

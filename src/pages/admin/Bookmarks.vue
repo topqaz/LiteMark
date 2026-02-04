@@ -30,12 +30,22 @@
 
     <!-- 桌面端表格 -->
     <el-table
+      ref="tableRef"
       v-loading="loading"
       :data="filteredBookmarks"
       style="width: 100%"
       empty-text="暂无书签或未匹配到搜索结果"
       class="desktop-table"
+      row-key="id"
     >
+      <el-table-column width="50" align="center">
+        <template #header>
+          <el-icon><Rank /></el-icon>
+        </template>
+        <template #default>
+          <span class="drag-handle" title="拖动排序">⠿</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="title" label="标题" min-width="200">
         <template #default="{ row }">
           <div class="table-title">{{ row.title }}</div>
@@ -94,7 +104,7 @@
     </el-table>
 
     <!-- 移动端卡片列表 -->
-    <div v-loading="loading" class="mobile-card-list">
+    <div v-loading="loading" class="mobile-card-list" ref="mobileListRef">
       <div v-if="filteredBookmarks.length === 0" class="empty-state">
         暂无书签或未匹配到搜索结果
       </div>
@@ -102,9 +112,11 @@
         v-for="(row, index) in filteredBookmarks"
         :key="row.id"
         class="bookmark-card"
+        :data-id="row.id"
       >
         <div class="card-header">
           <div class="card-title-section">
+            <span class="drag-handle mobile-drag" title="拖动排序">⠿</span>
             <div class="card-title">{{ row.title }}</div>
             <el-tag :type="row.visible === false ? 'info' : 'success'" class="card-tag">
               {{ row.visible === false ? '隐藏' : '可见' }}
@@ -123,24 +135,6 @@
           </div>
         </div>
         <div class="card-actions">
-          <el-button
-            link
-            type="primary"
-            size="small"
-            :disabled="orderSaving || index === 0"
-            @click="moveBookmark(row, -1)"
-          >
-            上移
-          </el-button>
-          <el-button
-            link
-            type="primary"
-            size="small"
-            :disabled="orderSaving || index === filteredBookmarks.length - 1"
-            @click="moveBookmark(row, 1)"
-          >
-            下移
-          </el-button>
           <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button
             link
@@ -170,20 +164,43 @@
           <el-input v-model="editorForm.url" placeholder="请输入链接" />
         </el-form-item>
         <el-form-item label="分类">
-          <el-autocomplete
-            v-model="editorForm.category"
-            :fetch-suggestions="queryCategorySuggestions"
-            placeholder="请输入分类"
-            style="width: 100%"
-          />
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <el-autocomplete
+              v-model="editorForm.category"
+              :fetch-suggestions="queryCategorySuggestions"
+              placeholder="请输入分类"
+              style="flex: 1;"
+            />
+            <el-button
+              type="success"
+              :loading="aiClassifying"
+              :disabled="!editorForm.url"
+              @click="aiClassify"
+              title="AI 智能分类"
+            >
+              <el-icon><MagicStick /></el-icon>
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="描述">
-          <el-input
-            v-model="editorForm.description"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入描述"
-          />
+          <div style="width: 100%;">
+            <el-input
+              v-model="editorForm.description"
+              type="textarea"
+              :rows="3"
+              placeholder="请输入描述"
+            />
+            <el-button
+              type="success"
+              size="small"
+              :loading="aiSummarizing"
+              :disabled="!editorForm.url"
+              @click="aiSummarize"
+              style="margin-top: 8px;"
+            >
+              <el-icon><MagicStick /></el-icon> AI 生成摘要
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="显示状态">
           <el-switch v-model="editorForm.visible" />
@@ -207,9 +224,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch, onUnmounted } from 'vue';
+import { computed, onMounted, reactive, ref, watch, onUnmounted, nextTick } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-// 图标已全局注册，直接使用组件名称
+import { aiApi, type ClassifyResponse, type SummarizeResponse } from '../../api';
+import Sortable from 'sortablejs';
 
 type Bookmark = {
   id: string;
@@ -255,6 +273,10 @@ const editorForm = reactive({
 
 const orderSaving = ref(false);
 
+// AI 功能状态
+const aiClassifying = ref(false);
+const aiSummarizing = ref(false);
+
 const storedToken = typeof window !== 'undefined' ? window.localStorage.getItem('bookmark_token') : null;
 const authToken = ref<string | null>(storedToken);
 const isAuthenticated = computed(() => Boolean(authToken.value));
@@ -263,6 +285,76 @@ const isAuthenticated = computed(() => Boolean(authToken.value));
 const isMobile = ref(false);
 function checkMobile() {
   isMobile.value = window.innerWidth <= 768;
+}
+
+// 表格引用和拖拽排序
+const tableRef = ref<InstanceType<typeof import('element-plus')['ElTable']> | null>(null);
+const mobileListRef = ref<HTMLElement | null>(null);
+let sortableInstance: Sortable | null = null;
+let mobileSortableInstance: Sortable | null = null;
+
+function initSortable() {
+  // 销毁旧实例
+  if (sortableInstance) {
+    sortableInstance.destroy();
+    sortableInstance = null;
+  }
+  if (mobileSortableInstance) {
+    mobileSortableInstance.destroy();
+    mobileSortableInstance = null;
+  }
+
+  nextTick(() => {
+    // 桌面端表格排序
+    const tableEl = document.querySelector('.desktop-table .el-table__body-wrapper tbody');
+    if (tableEl) {
+      sortableInstance = Sortable.create(tableEl as HTMLElement, {
+        animation: 150,
+        handle: '.drag-handle',
+        ghostClass: 'sortable-ghost',
+        onEnd: async (evt) => {
+          const { oldIndex, newIndex } = evt;
+          if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) {
+            return;
+          }
+
+          const list = [...bookmarks.value];
+          const [item] = list.splice(oldIndex, 1);
+          list.splice(newIndex, 0, item);
+          bookmarks.value = list;
+
+          const category = item.category || '';
+          const categoryBookmarks = list.filter(b => (b.category || '') === category);
+          await persistOrder(categoryBookmarks, category);
+        }
+      });
+    }
+
+    // 移动端卡片排序
+    if (mobileListRef.value) {
+      mobileSortableInstance = Sortable.create(mobileListRef.value, {
+        animation: 150,
+        handle: '.mobile-drag',
+        ghostClass: 'sortable-ghost',
+        draggable: '.bookmark-card',
+        onEnd: async (evt) => {
+          const { oldIndex, newIndex } = evt;
+          if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) {
+            return;
+          }
+
+          const list = [...bookmarks.value];
+          const [item] = list.splice(oldIndex, 1);
+          list.splice(newIndex, 0, item);
+          bookmarks.value = list;
+
+          const category = item.category || '';
+          const categoryBookmarks = list.filter(b => (b.category || '') === category);
+          await persistOrder(categoryBookmarks, category);
+        }
+      });
+    }
+  });
 }
 
 const filteredBookmarks = computed(() => {
@@ -454,7 +546,7 @@ async function toggleVisibility(bookmark: Bookmark) {
   }
 }
 
-async function persistOrder(list: Bookmark[]) {
+async function persistOrder(list: Bookmark[], category: string) {
   if (!isAuthenticated.value) {
     return;
   }
@@ -462,14 +554,12 @@ async function persistOrder(list: Bookmark[]) {
   try {
     const response = await requestWithAuth(`${apiBase}/api/bookmarks/reorder`, {
       method: 'POST',
-      body: JSON.stringify({ order: list.map((item) => item.id) })
+      body: JSON.stringify({ category, bookmark_ids: list.map((item) => item.id) })
     });
     if (!response.ok) {
       const message = await response.text();
       throw new Error(message || '保存排序失败');
     }
-    const updated = (await response.json()) as Bookmark[];
-    bookmarks.value = updated;
     ElMessage.success('书签排序已更新');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存排序失败');
@@ -491,12 +581,64 @@ async function moveBookmark(bookmark: Bookmark, direction: number) {
   const [item] = list.splice(currentIndex, 1);
   list.splice(targetIndex, 0, item);
   bookmarks.value = list;
-  await persistOrder(list);
+
+  // 只重新排序同一分类的书签
+  const category = bookmark.category || '';
+  const categoryBookmarks = list.filter(b => (b.category || '') === category);
+  await persistOrder(categoryBookmarks, category);
+}
+
+// AI 智能分类
+async function aiClassify() {
+  if (!editorForm.url) {
+    ElMessage.warning('请先输入链接');
+    return;
+  }
+  aiClassifying.value = true;
+  try {
+    const result = await aiApi.classify({
+      url: editorForm.url,
+      title: editorForm.title,
+      description: editorForm.description,
+    });
+    editorForm.category = result.suggested_category;
+    ElMessage.success(`AI 推荐分类: ${result.suggested_category} (置信度: ${(result.confidence * 100).toFixed(0)}%)`);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'AI 分类失败');
+  } finally {
+    aiClassifying.value = false;
+  }
+}
+
+// AI 生成摘要
+async function aiSummarize() {
+  if (!editorForm.url) {
+    ElMessage.warning('请先输入链接');
+    return;
+  }
+  aiSummarizing.value = true;
+  try {
+    const result = await aiApi.summarize({
+      url: editorForm.url,
+    });
+    editorForm.description = result.summary;
+    if (result.tags && result.tags.length > 0) {
+      ElMessage.success(`摘要已生成，标签: ${result.tags.join(', ')}`);
+    } else {
+      ElMessage.success('摘要已生成');
+    }
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : 'AI 生成摘要失败');
+  } finally {
+    aiSummarizing.value = false;
+  }
 }
 
 onMounted(() => {
   if (isAuthenticated.value) {
-    loadBookmarks();
+    loadBookmarks().then(() => {
+      initSortable();
+    });
   }
   checkMobile();
   window.addEventListener('resize', checkMobile);
@@ -504,12 +646,55 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile);
+  if (sortableInstance) {
+    sortableInstance.destroy();
+    sortableInstance = null;
+  }
+  if (mobileSortableInstance) {
+    mobileSortableInstance.destroy();
+    mobileSortableInstance = null;
+  }
 });
 </script>
 
 <style scoped>
 .bookmarks-page {
   padding: 0;
+}
+
+/* 拖拽排序样式 */
+.drag-handle {
+  cursor: grab;
+  font-size: 18px;
+  color: #9ca3af;
+  user-select: none;
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.drag-handle:hover {
+  color: #1a73e8;
+  background: rgba(26, 115, 232, 0.1);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.mobile-drag {
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+:deep(.sortable-ghost) {
+  opacity: 0.4;
+  background: #e3f2fd !important;
+}
+
+:deep(.sortable-chosen) {
+  background: #f5f5f5;
 }
 
 .page-header {
@@ -583,9 +768,8 @@ onUnmounted(() => {
 .card-title-section {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 8px;
-  gap: 12px;
+  gap: 8px;
 }
 
 .card-title {

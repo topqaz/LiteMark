@@ -177,7 +177,7 @@ async function persistOrder(orderIds: string[]) {
   try {
     const response = await requestWithAuth(`${endpoint}/reorder`, {
       method: 'POST',
-      body: JSON.stringify({ order: orderIds })
+      body: JSON.stringify({ bookmark_ids: orderIds })
     });
     if (!response.ok) {
       const message = await response.text();
@@ -235,8 +235,8 @@ async function handleGroupReorder(groupKey: string, orderedIds: string[]) {
   }
 
   bookmarks.value = reordered;
-  pendingOrder.value = reordered.map((item) => item.id);
-  orderMessage.value = '排序已调整，记得保存。';
+
+  await persistOrder(newGroup.map((item) => item.id));
 }
 
 function setupSortables() {
@@ -889,15 +889,6 @@ function getFaviconUrl(url: string): string {
           </label>
           <span v-if="themeSaving" class="theme-switcher__status">保存中...</span>
         </div>
-        <button
-          v-if="isAuthenticated"
-          class="button button--primary save-button"
-          type="button"
-          :disabled="orderSaving || !pendingOrder"
-          @click="() => pendingOrder && persistOrder(pendingOrder)"
-        >
-          {{ orderSaving ? '保存中...' : '保存顺序' }}
-        </button>
         <button
           v-if="isAuthenticated"
           class="button button--primary add-button"
