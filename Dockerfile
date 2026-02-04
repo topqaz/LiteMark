@@ -8,6 +8,9 @@
 # =====================
 FROM node:20-alpine AS frontend-builder
 
+# 安装构建依赖（Python 和编译工具）
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
 # 复制前端依赖文件
