@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv
+.venv
+*.egg-info
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# 本地配置
+.env
+.env.local
+backend/.env
+backend/.env.local
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 构建产物
+dist
+build
+
+# 其他
+.DS_Store
+*.log
+*.md
+project_img
+scripts
+vercel.json
+api.md

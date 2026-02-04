@@ -45,3 +45,32 @@ class BatchProcessResponse(BaseModel):
     processed: int
     failed: int
     errors: List[str]
+
+
+class QuickAddRequest(BaseModel):
+    """快速添加书签请求 - 只需 URL"""
+    url: str
+
+
+class QuickAddWithTitleRequest(BaseModel):
+    """快速添加书签请求 - URL + 标题"""
+    url: str
+    title: str
+
+
+class QuickAddWithCategoryRequest(BaseModel):
+    """快速添加书签请求 - URL + 标题 + 分类"""
+    url: str
+    title: str
+    category: str
+
+
+class QuickAddResponse(BaseModel):
+    """快速添加书签响应"""
+    id: str
+    title: str
+    url: str
+    description: str
+    category: str
+    tags: str
+    visible: bool = True
