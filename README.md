@@ -8,30 +8,64 @@
 
 ---
 
-LiteMark 是一款基于 **Vue 3 + Vite** 的个人书签管理应用，提供响应式双端体验、后台管理面板以及 Postgres 持久化存储。当前前端和后端（Vercel Functions + Vercel Postgres）已深度集成，只需少量配置即可在本地或 Vercel 上快速运行。
+LiteMark 是一款基于 **Vue 3 + FastAPI** 的个人书签管理应用，提供响应式双端体验、后台管理面板、AI 智能功能以及多种部署方式。
+
 ---
-
-
-
-## 部署到 Vercel
-### 一键部署
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Ftopqaz%2FLiteMark&env=JWT_SECRET&project-name=litemark&repository-name=litemark)
-
-部署完成后手动创建Neon Serverless Postgres数据库，然后连接到这个项目即可
-### 手动部署
-1. **Fork / Clone** 仓库，并推送至自己的 Git 仓库。
-2. 新建Neon Serverless Postgres 数据库   最后绑定到自己的项目
-3. 在 Vercel 创建新项目，导入仓库。
-4. 项目设置 → **Environment Variables**，填入 `.env.example` 中的变量（见下表）。
-5. 点击 **Deploy**，等待构建完成。前端地址为 `https://<project>.vercel.app`，后台入口 `https://<project>.vercel.app/admin`。
-
 
 ## 功能亮点
 
-- 📚 **书签管理**：支持添加、编辑、删除、隐藏与排序；分类顺序与分类内顺序均可拖拽调整。
-- 🔐 **后台面板**：位于 `/admin`，含登录校验、缓存刷新、站点设置等管理动作。
-- 🚀 **极佳体验**：友好的 API、响应式布局与移动端操作优化。
-- 💾 **WebDAV 定时备份**：支持配置 WebDAV 服务器，实现定时自动循环备份（每天/每周/每月）。
+- 📚 **书签管理**：支持添加、编辑、删除、隐藏与排序；分类顺序与分类内顺序均可拖拽调整
+- 🤖 **AI 智能功能**：智能分类推荐、内容摘要生成、标签提取、快速添加书签
+- 🔐 **后台面板**：位于 `/admin`，含登录校验、站点设置、备份管理等
+- 💾 **WebDAV 定时备份**：支持配置 WebDAV 服务器，实现定时自动备份
+- 🐳 **Docker 部署**：一键部署，支持 x64 和 ARM64 架构
+
+---
+
+## 快速开始
+
+### Docker 部署（推荐）
+
+```bash
+# 使用 docker-compose
+curl -O https://raw.githubusercontent.com/topqaz/LiteMark/main/docker-compose.yml
+docker-compose up -d
+
+# 或直接使用 docker run
+docker run -d -p 8080:80 \
+  -v litemark-data:/app/data \
+  -e JWT_SECRET=your-secret-key \
+  -e DEFAULT_ADMIN_USERNAME=admin \
+  -e DEFAULT_ADMIN_PASSWORD=admin123 \
+  --name litemark \
+  topqaz/litemark:latest
+```
+
+访问地址：`http://localhost:8080`，后台入口：`http://localhost:8080/admin`
+
+### docker-compose.yml 示例
+
+```yaml
+services:
+  litemark:
+    image: topqaz/litemark:latest
+    container_name: litemark
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - litemark-data:/app/data
+    environment:
+      - JWT_SECRET=change-this-to-a-secure-random-string
+      - DATABASE_URL=sqlite+aiosqlite:///./data/litemark.db
+      - DEFAULT_ADMIN_USERNAME=admin
+      - DEFAULT_ADMIN_PASSWORD=admin123
+      - DEBUG=false
+      - CORS_ORIGINS=*
+
+volumes:
+  litemark-data:
+```
 
 ---
 
@@ -65,7 +99,6 @@ LiteMark 是一款基于 **Vue 3 + Vite** 的个人书签管理应用，提供�
 
 ---
 
-
 ## WebDAV 定时备份
 
 LiteMark 支持将数据定时备份到 WebDAV 服务器，确保数据安全。
@@ -74,127 +107,105 @@ LiteMark 支持将数据定时备份到 WebDAV 服务器，确保数据安全。
 
 1. **在后台配置 WebDAV**
    - 进入后台管理 → 数据备份
-   - 在 "WebDAV 定时备份" 区域填写：
-     - WebDAV 地址（如：`https://dav.example.com`）
-     - 用户名和密码
-     - 备份路径（可选，默认为 `litemark-backup/`）
+   - 填写 WebDAV 地址、用户名、密码
+   - 设置备份路径和保留份数
    - 点击"测试连接"验证配置
-   - 点击"保存配置"保存设置
 
 2. **启用定时备份**
    - 打开"启用定时备份"开关
+   - 设置每日备份时间
    - 保存配置
-   - 自定义触发方式
-      - 默认使用vercel cron job来定时触发也可以使用一些平台来定时触发  
-      - 定时访问这个api即可  `http://dav.example.com/api/cron/backup`
-      - 如果CRON_SECRET 请求时须在请求头添加CRON_SECRET
-3. **配置 Vercel Cron Job**  （默认每天凌晨2点，如需自定义备份频率可以更改）
-   默认使用的UTC +0时间  注意转换
-   "schedule": "0 18 * * *"  代表的上海时间 每天2:00进行一次备份
-   在项目根目录的 `vercel.json` 中添加 cron 配置：
-
-   ```json
-   {
-     "crons": [{
-       "path": "/api/cron/backup",
-       "schedule": "0 18 * * *"
-     }]
-   }
-   ```
-
-   - `schedule` 使用 cron 表达式，根据你选择的备份频率：
-     - **每天**：`0 2 * * *` - 每天凌晨 2 点
-     - **每周**：`0 2 * * 0` - 每周日凌晨 2 点
-     - **每月**：`0 2 1 * *` - 每月 1 号凌晨 2 点
-
-4. **设置 CRON_SECRET（推荐）**
-   
-   在 Vercel 环境变量中添加 `CRON_SECRET`，用于保护 cron 端点：
-
-   ```
-   CRON_SECRET=your-random-secret-key
-   ```
-
-   Cron Job 会自动在请求头中添加 `Authorization: Bearer ${CRON_SECRET}`。
 
 ### 手动备份
 
-在后台管理 → 数据备份页面，点击"立即备份"按钮可手动触发备份到 WebDAV。
+在后台管理 → 数据备份页面，点击"立即备份"按钮可手动触发备份。
 
 ### 备份文件格式
 
-备份文件为 JSON 格式，包含：
-- 所有书签数据
-- 站点设置（主题、标题、图标等）
-- 导出时间戳
-- 文件名格式：`litemark-backup-YYYY-MM-DD.json`
+- 文件格式：JSON
+- 包含内容：所有书签数据、分类顺序
+- 文件名格式：`litemark-backup-YYYY-MM-DD-HH-MM-SS.json`
 
 ---
 
-## 部署到 Vercel
-
-1. **Fork / Clone** 仓库，并推送至自己的 Git 仓库。
-2. 在 Vercel 创建新项目，导入仓库。
-3. 项目设置 → **Environment Variables**，填入 `.env.example` 中的变量（见下表）。
-4. 点击 **Deploy**，等待构建完成。前端地址为 `https://<project>.vercel.app`，后台入口 `https://<project>.vercel.app/admin`。
-
-> 若部署后 `/api` 返回静态页面或 404，多半是 `vercel.json` 不存在或命名错误（确保文件名为 `vercel.json`）。
-
----
-
-##  浏览器插件
+## 浏览器插件
 
 https://github.com/topqaz/LiteMark-extension-browser
 
-  - 支持当前页面一键添加
-  - 支持浏览器书签一键导入
+- 支持当前页面一键添加
+- 支持浏览器书签一键导入
 
-## 环境变量清单
+---
 
-在根目录 `.env.example` 或 Vercel 控制台中配置：
+## 环境变量
 
-| 变量 | 说明 | 默认值 | 是否必需 |
-| --- | --- | --- | --- |
-| `VITE_API_BASE_URL` | 前端调用 API 的基础地址；留空则使用当前域名。 | _(空字符串)_ | 否 |
-| `JWT_SECRET` | JWT 令牌签名密钥，用于用户认证。生产环境必须修改。 | `your-secret-key-change-in-production` | **是（生产环境）** |
-| `CORS_ORIGIN` | CORS 跨域允许的来源。设置为 `*` 允许所有来源，或指定具体域名。 | `*` | 否 |
-| `POSTGRES_URL` | Vercel Postgres 数据库连接 URL（Vercel 自动提供） | - | 是（Vercel 部署） |
-| `POSTGRES_PRISMA_URL` | Vercel Postgres Prisma 连接 URL（Vercel 自动提供） | - | 是（Vercel 部署） |
-| `POSTGRES_URL_NON_POOLING` | Vercel Postgres 非连接池 URL（Vercel 自动提供） | - | 是（Vercel 部署） |
-| `CRON_SECRET` | Cron Job 安全密钥（用于保护自动备份端点） | - | 否（推荐） |
-
-### 环境变量说明
-
-- **`VITE_API_BASE_URL`**：如果前端和 API 部署在同一域名下，可以留空。如果 API 部署在不同域名，需要填写完整的 API 地址（如 `https://api.example.com`）。
-- **`JWT_SECRET`**：用于签名和验证 JWT 令牌。**生产环境必须设置一个强随机字符串**，建议使用至少 32 位的随机字符串。
-- **`CORS_ORIGIN`**：控制跨域请求的来源。设置为 `*` 允许所有来源（开发环境），生产环境建议设置为具体的域名（如 `https://example.com`）。
-- **Vercel Postgres 变量**：在 Vercel 上部署时，连接 Vercel Postgres 数据库后会自动提供这些环境变量，无需手动配置。
-
-> **注意**：
-> - 管理员账号密码存储在数据库的 `admin_credentials` 表中，默认账号为 `admin / admin123`，可在后台「账号管理」中修改，无需通过环境变量配置。
-> - 在 Vercel 部署时，需要在 Vercel 项目设置中手动添加 `JWT_SECRET` 和 `CORS_ORIGIN`（如需要）。
-> - 本地开发时，可以在根目录创建 `.env.local` 文件来配置这些变量。
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `JWT_SECRET` | JWT 签名密钥，**生产环境必须修改** | `change-this-to-a-secure-random-string` |
+| `DATABASE_URL` | 数据库连接 URL | `sqlite+aiosqlite:///./data/litemark.db` |
+| `DEFAULT_ADMIN_USERNAME` | 默认管理员用户名（仅首次启动有效） | `admin` |
+| `DEFAULT_ADMIN_PASSWORD` | 默认管理员密码（仅首次启动有效） | `admin123` |
+| `DEBUG` | 调试模式 | `false` |
+| `CORS_ORIGINS` | CORS 允许的来源 | `*` |
 
 ---
 
 ## 项目结构
 
 ```
-├─ api/
-│  ├─ auth/                 # 登录接口
-│  ├─ bookmarks/            # 书签 CRUD、排序、刷新
-│  ├─ settings/             # 站点设置获取/修改
-│  ├─ admin/                # 管理员账号管理
-│  └─ _lib/                 # 鉴权、数据库、HTTP 等辅助模块
-├─ src/
+├─ backend/                 # Python 后端
+│  ├─ app/
+│  │  ├─ api/              # API 路由
+│  │  ├─ models/           # 数据模型
+│  │  ├─ schemas/          # Pydantic 模式
+│  │  ├─ services/         # 业务逻辑
+│  │  └─ utils/            # 工具函数
+│  └─ requirements.txt
+├─ src/                     # Vue 前端
 │  ├─ pages/
-│  │  ├─ HomePage.vue       # 前台书签展示
-│  │  └─ AdminDashboard.vue # 后台管理面板
-│  ├─ App.vue               # 路由容器
-│  └─ main.ts               # 应用入口
+│  │  ├─ HomePageV2.vue    # 前台书签展示
+│  │  └─ admin/            # 后台管理页面
+│  ├─ App.vue
+│  └─ main.ts
+├─ docker/                  # Docker 配置
+│  ├─ nginx.conf
+│  ├─ supervisord.conf
+│  └─ entrypoint.sh
+├─ Dockerfile
+├─ docker-compose.yml
 └─ public/                  # 静态资源
 ```
 
 ---
 
-更多使用说明请参考 [`api.md`](./api.md)。欢迎提交 Issue / PR 优化功能。
+## 本地开发
+
+### 前端
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+```
+
+### 后端
+
+```bash
+cd backend
+
+# 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动服务
+uvicorn app.main:app --reload --port 8000
+```
+
+---
+
+更多 API 使用说明请参考 [`api.md`](./api.md)。欢迎提交 Issue / PR 优化功能。
