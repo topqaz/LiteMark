@@ -143,6 +143,17 @@
           />
           <div class="form-tip">保留最近的备份文件数量，0 表示不限制（建议设置为 7-30）</div>
         </el-form-item>
+        <el-form-item label="备份时间">
+          <el-time-picker
+            v-model="backupTimeValue"
+            format="HH:mm"
+            value-format="HH:mm"
+            :disabled="webdavSaving || !isAuthenticated"
+            placeholder="选择备份时间"
+            style="width: 100%"
+          />
+          <div class="form-tip">每天定时备份的时间（服务器本地时间）</div>
+        </el-form-item>
         <el-form-item>
           <el-button
             type="primary"
@@ -197,10 +208,10 @@
           <div>
             <strong>自动备份已开启</strong>
             <p style="margin: 8px 0 0 0; font-size: 13px;">
-              系统将在 Cron Job 触发时自动备份数据到 WebDAV。每次备份会创建新文件（格式：<code>litemark-backup-YYYY-MM-DD-HH-mm-ss.json</code>），并自动清理超出保留数量的旧备份。
+              系统将在每天 <code>{{ webdavConfig.backupTime }}</code> 自动备份数据到 WebDAV。每次备份会创建新文件（格式：<code>litemark-backup-YYYY-MM-DD-HH-mm-ss.json</code>），并自动清理超出保留数量的旧备份。
             </p>
-            <p style="margin: 8px 0 0 0; font-size: 13px;">
-              将使用 <code>vercel.json</code> 中配置的 Cron Job 自动备份数据到 WebDAV。  默认每天凌晨2点备份。
+            <p v-if="webdavConfig.lastBackup" style="margin: 8px 0 0 0; font-size: 13px;">
+              上次备份时间: <code>{{ formatLastBackup(webdavConfig.lastBackup) }}</code>
             </p>
           </div>
         </template>
@@ -217,7 +228,7 @@
           <div>
             <strong>自动备份已关闭</strong>
             <p style="margin: 8px 0 0 0; font-size: 13px;">
-              开启自动备份后，系统将按 Cron Job 配置的时间自动备份数据到 WebDAV。
+              开启自动备份后，系统将在设定的时间自动备份数据到 WebDAV 服务器。
             </p>
           </div>
         </template>
@@ -227,7 +238,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { getShanghaiDateString } from '../../utils/date.js';
 // 图标已全局注册，直接使用组件名称
@@ -258,13 +269,23 @@ const webdavConfig = ref({
   password: '',
   path: 'litemark-backup/',
   keepBackups: 7,
-  enabled: false
+  enabled: false,
+  backupTime: '02:00',
+  lastBackup: ''
 });
 const webdavSaving = ref(false);
 const webdavTesting = ref(false);
 const webdavBackupLoading = ref(false);
 const webdavMessage = ref('');
 const webdavError = ref('');
+
+// 备份时间的计算属性
+const backupTimeValue = computed({
+  get: () => webdavConfig.value.backupTime,
+  set: (val: string) => {
+    webdavConfig.value.backupTime = val || '02:00';
+  }
+});
 
 async function requestWithAuth(input: RequestInfo | URL, init: RequestInit = {}) {
   if (!authToken.value) {
@@ -485,7 +506,9 @@ async function loadWebDAVConfig() {
           password: '', // 不加载密码
           path: config.path || 'litemark-backup/',
           keepBackups: config.keepBackups ?? 7,
-          enabled: config.enabled !== false
+          enabled: config.enabled !== false,
+          backupTime: config.backupTime || '02:00',
+          lastBackup: config.lastBackup || ''
         };
       }
     }
@@ -671,6 +694,24 @@ async function triggerWebDAVBackup() {
   }
 }
 
+
+// 格式化上次备份时间
+function formatLastBackup(isoString: string): string {
+  if (!isoString) return '无';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  } catch {
+    return isoString;
+  }
+}
 
 // 页面加载时获取配置
 onMounted(() => {

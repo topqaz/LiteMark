@@ -9,7 +9,7 @@
       </template>
       <p>
     LiteMark 是一款基于 <strong>Vue 3 + Vite + FastAPI</strong> 的个人书签管理应用，提供响应式双端体验、后台管理面板。</p>
-      <p>支持 AI 智能分类、内容摘要、语义搜索等功能。</p>
+      <p>支持 AI 智能分类、内容摘要生成等功能。</p>
       <p>支持定时备份到 WebDAV 服务器。</p>
       <p>支持浏览器插件。</p>
 

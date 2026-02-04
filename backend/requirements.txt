@@ -1,0 +1,37 @@
+# FastAPI 核心
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# 数据库
+sqlalchemy==2.0.25
+aiosqlite==0.19.0  # SQLite 异步驱动
+
+# PostgreSQL 驱动 (可选，使用 PostgreSQL 时取消注释)
+# asyncpg==0.29.0
+
+# MySQL 驱动 (可选，使用 MySQL 时取消注释)
+# aiomysql==0.2.0
+
+# 认证
+python-jose[cryptography]==3.3.0
+bcrypt==4.0.1
+
+# OpenAI
+openai==1.12.0
+
+# 网页抓取
+httpx==0.26.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# 工具
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+
+# WebDAV 备份
+webdavclient3==3.14.6
+
+# 定时任务
+apscheduler==3.10.4

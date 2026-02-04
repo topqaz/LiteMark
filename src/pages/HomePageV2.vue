@@ -11,6 +11,7 @@ type Bookmark = {
   category?: string;
   description?: string;
   visible?: boolean;
+  tags?: string;
 };
 
 type CategoryOption = {
@@ -61,8 +62,13 @@ const form = reactive({
   url: '',
   category: '',
   description: '',
+  tags: [] as string[],
   visible: true
 });
+
+// AI 生成状态
+const aiGenerating = ref(false);
+const fetchingTitle = ref(false);
 
 const showLoginModal = ref(false);
 const loginState = reactive({
@@ -606,6 +612,7 @@ function resetForm() {
   form.url = '';
   form.category = '';
   form.description = '';
+  form.tags = [];
   form.visible = true;
   editingId.value = null;
 }
@@ -657,6 +664,7 @@ async function saveBookmark() {
     url: form.url.trim(),
     category: normalizedCategory || undefined,
     description: form.description.trim() || undefined,
+    tags: form.tags.length > 0 ? JSON.stringify(form.tags) : undefined,
     visible: form.visible
   };
 
@@ -691,6 +699,7 @@ function startEdit(bookmark: Bookmark) {
   form.url = bookmark.url;
   form.category = categoryKeyFromBookmark(bookmark);
   form.description = bookmark.description ?? '';
+  form.tags = parseTags(bookmark.tags);
   form.visible = bookmark.visible !== false;
 }
 
@@ -889,10 +898,96 @@ function getFaviconUrl(url: string): string {
   }
 }
 
+function parseTags(tagsJson: string | undefined): string[] {
+  if (!tagsJson) return [];
+  try {
+    const parsed = JSON.parse(tagsJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function openAdmin() {
   if (typeof window !== 'undefined') {
     window.location.href = '/admin';
   }
+}
+
+// 获取网页标题
+async function fetchTitle() {
+  if (!form.url.trim()) {
+    showActionMessage('请先输入链接');
+    return;
+  }
+  fetchingTitle.value = true;
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/ai/fetch-page-info`, {
+      method: 'POST',
+      body: JSON.stringify({ url: form.url.trim() })
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || '获取标题失败');
+    }
+    const result = await response.json() as { title: string; description: string; favicon: string };
+    if (result.title) {
+      form.title = result.title;
+      showActionMessage('已获取网页标题');
+    } else {
+      showActionMessage('未能获取到标题');
+    }
+  } catch (err) {
+    error.value = toUserMessage(err, '获取标题失败');
+  } finally {
+    fetchingTitle.value = false;
+  }
+}
+
+// AI 生成摘要和标签
+async function aiGenerate() {
+  if (!form.url.trim()) {
+    showActionMessage('请先输入链接');
+    return;
+  }
+  aiGenerating.value = true;
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/ai/summarize`, {
+      method: 'POST',
+      body: JSON.stringify({ url: form.url.trim() })
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || 'AI 生成失败');
+    }
+    const result = await response.json() as { summary: string; tags: string[]; reading_time?: number };
+    if (result.summary) {
+      form.description = result.summary;
+    }
+    if (result.tags && result.tags.length > 0) {
+      form.tags = result.tags;
+    }
+    showActionMessage('AI 已生成摘要和标签');
+  } catch (err) {
+    error.value = toUserMessage(err, 'AI 生成失败');
+  } finally {
+    aiGenerating.value = false;
+  }
+}
+
+// 添加标签
+function addTag(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const tag = input.value.trim();
+  if (tag && !form.tags.includes(tag)) {
+    form.tags.push(tag);
+  }
+  input.value = '';
+}
+
+// 删除标签
+function removeTag(index: number) {
+  form.tags.splice(index, 1);
 }
 </script>
 
@@ -916,56 +1011,71 @@ function openAdmin() {
         </div>
       </div>
       <div class="topbar__actions">
-        <div v-if="canEdit" class="theme-switcher">
-          <label>
-            <span>主题</span>
-            <select
-              v-model="selectedTheme"
-              @change="handleThemeChange"
-              :disabled="themeSaving"
-            >
-              <option v-for="option in themeOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-          <span v-if="themeSaving" class="theme-switcher__status">保存中...</span>
+        <div v-if="canEdit" class="icon-btn-wrapper">
+          <button
+            class="icon-btn"
+            type="button"
+            @click="selectedTheme = selectedTheme === 'light' ? 'dark' : 'light'; handleThemeChange()"
+            :disabled="themeSaving"
+          >
+            {{ selectedTheme === 'light' ? '🌙' : '☀️' }}
+          </button>
+          <span class="icon-btn-tooltip">{{ selectedTheme === 'light' ? '切换深色模式' : '切换浅色模式' }}</span>
         </div>
-        <button
-          v-if="isAuthenticated"
-          class="button button--ghost"
-          type="button"
-          @click="openAdmin"
-        >
-          进入后台
-        </button>
-        <button
-          v-if="isAuthenticated"
-          class="button edit-toggle"
-          :class="isEditMode ? 'button--primary' : 'button--ghost'"
-          type="button"
-          @click="toggleEditMode"
-        >
-          {{ isEditMode ? '退出编辑' : '进入编辑' }}
-        </button>
-        <button
-          v-if="canEdit"
-          class="button button--primary add-button"
-          type="button"
-          @click="toggleForm"
-        >
-          {{ showForm ? '收起表单' : '添加书签' }}
-        </button>
-        <label v-if="canEdit" class="hidden-toggle">
-          <input type="checkbox" v-model="showHidden" />
-          显示隐藏书签
-        </label>
-        <button v-if="!isAuthenticated" class="button button--ghost login-button" @click="openLogin">
-          登录
-        </button>
+        <div v-if="isAuthenticated" class="icon-btn-wrapper">
+          <button
+            class="icon-btn"
+            type="button"
+            @click="openAdmin"
+          >
+            ⚙️
+          </button>
+          <span class="icon-btn-tooltip">后台管理</span>
+        </div>
+        <div v-if="isAuthenticated" class="icon-btn-wrapper">
+          <button
+            class="icon-btn"
+            :class="{ 'icon-btn--active': isEditMode }"
+            type="button"
+            @click="toggleEditMode"
+          >
+            {{ isEditMode ? '✓' : '✏️' }}
+          </button>
+          <span class="icon-btn-tooltip">{{ isEditMode ? '退出编辑模式' : '进入编辑模式' }}</span>
+        </div>
+        <div v-if="canEdit" class="icon-btn-wrapper">
+          <button
+            class="icon-btn icon-btn--accent"
+            type="button"
+            @click="toggleForm"
+          >
+            {{ showForm ? '−' : '+' }}
+          </button>
+          <span class="icon-btn-tooltip">{{ showForm ? '收起表单' : '添加新书签' }}</span>
+        </div>
+        <div v-if="canEdit" class="icon-btn-wrapper">
+          <button
+            class="icon-btn"
+            :class="{ 'icon-btn--active': showHidden }"
+            type="button"
+            @click="showHidden = !showHidden"
+          >
+            {{ showHidden ? '👁' : '👁‍🗨' }}
+          </button>
+          <span class="icon-btn-tooltip">{{ showHidden ? '隐藏私密书签' : '显示私密书签' }}</span>
+        </div>
+        <div v-if="!isAuthenticated" class="icon-btn-wrapper">
+          <button class="icon-btn" @click="openLogin">
+            👤
+          </button>
+          <span class="icon-btn-tooltip">登录账号</span>
+        </div>
         <div v-else class="profile">
           <span class="profile__name">{{ currentUser }}</span>
-          <button class="button button--ghost" @click="logout">退出</button>
+          <div class="icon-btn-wrapper">
+            <button class="icon-btn" @click="logout">↪</button>
+            <span class="icon-btn-tooltip">退出登录</span>
+          </div>
         </div>
       </div>
     </header>
@@ -992,56 +1102,108 @@ function openAdmin() {
           <h2>{{ editingId ? '编辑书签' : '新增书签' }}</h2>
         </header>
         <form @submit.prevent="saveBookmark">
-          <div class="form-grid">
-            <label class="field">
-              <span>标题 *</span>
-              <input v-model="form.title" type="text" placeholder="例如：Vue.js 官方文档" required />
-            </label>
-            <label class="field">
-              <span>链接 *</span>
-              <input v-model="form.url" type="url" placeholder="https://example.com" required />
-            </label>
-            <label class="field">
-              <span>分类</span>
-              <input
-                v-model="form.category"
-                type="text"
-                placeholder="例如：开发工具"
-                list="home-category-options"
-              />
-              <datalist id="home-category-options">
-                <option v-for="name in categorySuggestions" :key="name" :value="name" />
-              </datalist>
-            </label>
-            <label class="field field--description">
-              <span>描述</span>
-              <textarea
-                v-model="form.description"
-                placeholder="可填写简介、备注等信息"
-                rows="3"
-              ></textarea>
-            </label>
-            <div class="field field--checkbox">
-              <span>是否展示</span>
-              <div class="checkbox-row">
-                <input id="visible-toggle" v-model="form.visible" type="checkbox" />
-                <label for="visible-toggle">{{ form.visible ? '显示' : '隐藏' }}</label>
+          <div class="form-compact">
+            <!-- 第一行：链接 -->
+            <div class="form-row">
+              <label class="field field--url">
+                <span>链接 *</span>
+                <input v-model="form.url" type="url" placeholder="https://example.com" required />
+              </label>
+            </div>
+            <!-- 第二行：标题 + 分类 -->
+            <div class="form-row form-row--2col">
+              <label class="field">
+                <span>标题 *</span>
+                <input v-model="form.title" type="text" placeholder="网站标题" required />
+              </label>
+              <label class="field">
+                <span>分类</span>
+                <input
+                  v-model="form.category"
+                  type="text"
+                  placeholder="选择或输入分类"
+                  list="home-category-options"
+                />
+                <datalist id="home-category-options">
+                  <option v-for="name in categorySuggestions" :key="name" :value="name" />
+                </datalist>
+              </label>
+            </div>
+            <!-- 第三行：描述 + 标签 -->
+            <div class="form-row form-row--2col">
+              <label class="field">
+                <span>描述</span>
+                <input v-model="form.description" type="text" placeholder="简短描述（可选）" />
+              </label>
+              <div class="field">
+                <span>标签</span>
+                <div class="tags-input">
+                  <span
+                    v-for="(tag, index) in form.tags"
+                    :key="index"
+                    class="tags-input__tag"
+                  >
+                    {{ tag }}
+                    <button type="button" class="tags-input__remove" @click="removeTag(index)">×</button>
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="回车添加"
+                    @keydown.enter.prevent="addTag"
+                    class="tags-input__input"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-          <div class="form-actions">
-            <button class="button button--primary" type="submit" :disabled="saving">
-              {{ saving ? '保存中...' : editingId ? '保存修改' : '添加书签' }}
-            </button>
-            <button
-              v-if="editingId"
-              class="button button--ghost"
-              type="button"
-              @click="resetForm"
-              :disabled="saving"
-            >
-              取消编辑
-            </button>
+            <!-- 第四行：可见性 + AI按钮 + 操作按钮 -->
+            <div class="form-row form-row--footer">
+              <div class="footer-left">
+                <label class="toggle-field">
+                  <input v-model="form.visible" type="checkbox" class="toggle-checkbox" />
+                  <span class="toggle-label">{{ form.visible ? '显示' : '隐藏' }}</span>
+                </label>
+                <div class="ai-btn-group">
+                  <div class="ai-btn-wrapper">
+                    <button
+                      type="button"
+                      class="ai-btn ai-btn--fetch"
+                      :disabled="!form.url.trim() || fetchingTitle"
+                      @click="fetchTitle"
+                    >
+                      <span v-if="fetchingTitle" class="spinner-sm"></span>
+                      <span v-else>🔗</span>
+                    </button>
+                    <span class="ai-btn-tooltip">从网页获取标题</span>
+                  </div>
+                  <div class="ai-btn-wrapper">
+                    <button
+                      type="button"
+                      class="ai-btn ai-btn--ai"
+                      :disabled="!form.url.trim() || aiGenerating"
+                      @click="aiGenerate"
+                    >
+                      <span v-if="aiGenerating" class="spinner-sm"></span>
+                      <span v-else>✨</span>
+                    </button>
+                    <span class="ai-btn-tooltip">AI 智能生成标签</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-buttons">
+                <button
+                  v-if="editingId"
+                  class="button button--ghost"
+                  type="button"
+                  @click="resetForm"
+                  :disabled="saving"
+                >
+                  取消
+                </button>
+                <button class="button button--primary" type="submit" :disabled="saving">
+                  {{ saving ? '保存中...' : editingId ? '保存' : '添加' }}
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       </section>
@@ -1101,45 +1263,70 @@ function openAdmin() {
                   class="card__header-actions"
                 >
                   <span v-if="bookmark.visible === false" class="hidden-chip">已隐藏</span>
-                  <span
-                    v-if="canEdit"
-                    class="card__drag-handle"
-                    title="拖动调整顺序"
-                    @click.stop
-                  >
-                    ⠿
-                  </span>
-                  <button
-                    v-if="canEdit"
-                    class="card__action-button"
-                    type="button"
-                    @click.stop="startEdit(bookmark)"
-                    title="编辑"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    v-if="canEdit"
-                    class="card__action-button"
-                    type="button"
-                    @click.stop="toggleVisibility(bookmark)"
-                    :title="bookmark.visible === false ? '设为可见' : '设为隐藏'"
-                  >
-                    {{ bookmark.visible === false ? '👁' : '🙈' }}
-                  </button>
-                  <button
-                    v-if="canEdit"
-                    class="card__action-button"
-                    type="button"
-                    @click.stop="removeBookmark(bookmark.id)"
-                    title="删除"
-                  >
-                    ×
-                  </button>
+                  <div v-if="canEdit" class="card-btn-wrapper">
+                    <span
+                      class="card__drag-handle"
+                      @click.stop
+                    >
+                      ⠿
+                    </span>
+                    <span class="card-btn-tooltip">拖动排序</span>
+                  </div>
+                  <div v-if="canEdit" class="card-btn-wrapper">
+                    <button
+                      class="card__action-button"
+                      type="button"
+                      @click.stop="startEdit(bookmark)"
+                    >
+                      ✎
+                    </button>
+                    <span class="card-btn-tooltip">编辑书签</span>
+                  </div>
+                  <div v-if="canEdit" class="card-btn-wrapper">
+                    <button
+                      class="card__action-button"
+                      type="button"
+                      @click.stop="toggleVisibility(bookmark)"
+                    >
+                      {{ bookmark.visible === false ? '👁' : '🙈' }}
+                    </button>
+                    <span class="card-btn-tooltip">{{ bookmark.visible === false ? '设为可见' : '设为隐藏' }}</span>
+                  </div>
+                  <div v-if="canEdit" class="card-btn-wrapper">
+                    <button
+                      class="card__action-button"
+                      type="button"
+                      @click.stop="removeBookmark(bookmark.id)"
+                    >
+                      ×
+                    </button>
+                    <span class="card-btn-tooltip">删除书签</span>
+                  </div>
                 </div>
               </header>
               <p v-if="bookmark.description" class="card__description">{{ bookmark.description }}</p>
+              <div v-if="parseTags(bookmark.tags).length > 0" class="card__tags">
+                <span
+                  v-for="tag in parseTags(bookmark.tags).slice(0, 3)"
+                  :key="tag"
+                  class="card__tag"
+                >
+                  {{ tag }}
+                </span>
+                <span v-if="parseTags(bookmark.tags).length > 3" class="card__tag card__tag--more">
+                  +{{ parseTags(bookmark.tags).length - 3 }}
+                </span>
+              </div>
               <p class="card__url">{{ bookmark.url }}</p>
+              <!-- 悬停详情提示 -->
+              <div class="card__tooltip">
+                <div class="card__tooltip-title">{{ bookmark.title }}</div>
+                <div v-if="bookmark.description" class="card__tooltip-desc">{{ bookmark.description }}</div>
+                <div v-if="parseTags(bookmark.tags).length > 0" class="card__tooltip-tags">
+                  <span v-for="tag in parseTags(bookmark.tags)" :key="tag" class="card__tooltip-tag">{{ tag }}</span>
+                </div>
+                <div class="card__tooltip-url">{{ bookmark.url }}</div>
+              </div>
             </article>
           </div>
         </section>
@@ -1186,45 +1373,70 @@ function openAdmin() {
                 class="card__header-actions"
               >
                 <span v-if="bookmark.visible === false" class="hidden-chip">已隐藏</span>
-                <span
-                  v-if="canEdit"
-                  class="card__drag-handle"
-                  title="拖动调整顺序"
-                  @click.stop
-                >
-                  ⠿
-                </span>
-                <button
-                  v-if="canEdit"
-                  class="card__action-button"
-                  type="button"
-                  @click.stop="startEdit(bookmark)"
-                  title="编辑"
-                >
-                  ✎
-                </button>
-                <button
-                  v-if="canEdit"
-                  class="card__action-button"
-                  type="button"
-                  @click.stop="toggleVisibility(bookmark)"
-                  :title="bookmark.visible === false ? '设为可见' : '设为隐藏'"
-                >
-                  {{ bookmark.visible === false ? '👁' : '🙈' }}
-                </button>
-                <button
-                  v-if="canEdit"
-                  class="card__action-button"
-                  type="button"
-                  @click.stop="removeBookmark(bookmark.id)"
-                  title="删除"
-                >
-                  ×
-                </button>
+                <div v-if="canEdit" class="card-btn-wrapper">
+                  <span
+                    class="card__drag-handle"
+                    @click.stop
+                  >
+                    ⠿
+                  </span>
+                  <span class="card-btn-tooltip">拖动排序</span>
+                </div>
+                <div v-if="canEdit" class="card-btn-wrapper">
+                  <button
+                    class="card__action-button"
+                    type="button"
+                    @click.stop="startEdit(bookmark)"
+                  >
+                    ✎
+                  </button>
+                  <span class="card-btn-tooltip">编辑书签</span>
+                </div>
+                <div v-if="canEdit" class="card-btn-wrapper">
+                  <button
+                    class="card__action-button"
+                    type="button"
+                    @click.stop="toggleVisibility(bookmark)"
+                  >
+                    {{ bookmark.visible === false ? '👁' : '🙈' }}
+                  </button>
+                  <span class="card-btn-tooltip">{{ bookmark.visible === false ? '设为可见' : '设为隐藏' }}</span>
+                </div>
+                <div v-if="canEdit" class="card-btn-wrapper">
+                  <button
+                    class="card__action-button"
+                    type="button"
+                    @click.stop="removeBookmark(bookmark.id)"
+                  >
+                    ×
+                  </button>
+                  <span class="card-btn-tooltip">删除书签</span>
+                </div>
               </div>
             </header>
             <p v-if="bookmark.description" class="card__description">{{ bookmark.description }}</p>
+            <div v-if="parseTags(bookmark.tags).length > 0" class="card__tags">
+              <span
+                v-for="tag in parseTags(bookmark.tags).slice(0, 3)"
+                :key="tag"
+                class="card__tag"
+              >
+                {{ tag }}
+              </span>
+              <span v-if="parseTags(bookmark.tags).length > 3" class="card__tag card__tag--more">
+                +{{ parseTags(bookmark.tags).length - 3 }}
+              </span>
+            </div>
             <p class="card__url">{{ bookmark.url }}</p>
+            <!-- 悬停详情提示 -->
+            <div class="card__tooltip">
+              <div class="card__tooltip-title">{{ bookmark.title }}</div>
+              <div v-if="bookmark.description" class="card__tooltip-desc">{{ bookmark.description }}</div>
+              <div v-if="parseTags(bookmark.tags).length > 0" class="card__tooltip-tags">
+                <span v-for="tag in parseTags(bookmark.tags)" :key="tag" class="card__tooltip-tag">{{ tag }}</span>
+              </div>
+              <div class="card__tooltip-url">{{ bookmark.url }}</div>
+            </div>
           </article>
         </div>
       </section>
@@ -1266,91 +1478,100 @@ function openAdmin() {
 
 <style scoped>
 :global(:root) {
-  --bg-gradient-start: #f6f7f9;
-  --bg-gradient-end: #eef1f5;
-  --text-primary: #1f2933;
-  --text-secondary: #4b5563;
-  --text-muted: #9099a3;
-  --surface-glass: rgba(255, 255, 255, 0.93);
-  --surface-strong: rgba(255, 255, 255, 0.98);
-  --surface-soft: rgba(255, 255, 255, 0.9);
-  --surface-card: rgba(248, 250, 252, 0.96);
-  --surface-border: rgba(148, 163, 184, 0.14);
-  --surface-shadow: rgba(15, 23, 42, 0.08);
-  --shadow-strong: rgba(15, 23, 42, 0.16);
-  --search-bg: #edf0f4;
-  --accent-start: #2b9ea3;
-  --accent-end: #3bb3c4;
-  --accent-text: #1f7c83;
-  --accent-shadow: rgba(43, 158, 163, 0.22);
-  --ghost-bg: rgba(255, 255, 255, 0.86);
-  --ghost-border: rgba(148, 163, 184, 0.28);
-  --ghost-text: #5b6876;
-  --danger-bg: rgba(248, 113, 113, 0.16);
-  --danger-border: rgba(220, 38, 38, 0.2);
-  --danger-text: #b91c1c;
-  --tag-bg: rgba(148, 163, 184, 0.22);
-  --tag-text: #4b5563;
-  --badge-bg: rgba(148, 163, 184, 0.2);
-  --badge-text: #4b5563;
-  --tab-bg: rgba(255, 255, 255, 0.92);
-  --tab-text: #4b5563;
-  --tab-active-bg-start: #2b9ea3;
-  --tab-active-bg-end: #3bb3c4;
+  /* 灰色金属质感配色 */
+  --bg-gradient-start: #f8f9fa;
+  --bg-gradient-end: #e9ecef;
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --text-muted: #868e96;
+  --surface-glass: rgba(255, 255, 255, 0.85);
+  --surface-strong: rgba(255, 255, 255, 0.95);
+  --surface-soft: rgba(248, 249, 250, 0.9);
+  --surface-card: rgba(255, 255, 255, 0.92);
+  --surface-border: rgba(134, 142, 150, 0.18);
+  --surface-shadow: rgba(0, 0, 0, 0.06);
+  --shadow-strong: rgba(0, 0, 0, 0.12);
+  --search-bg: rgba(233, 236, 239, 0.8);
+  --accent-start: #495057;
+  --accent-end: #6c757d;
+  --accent-text: #495057;
+  --accent-shadow: rgba(73, 80, 87, 0.2);
+  --ghost-bg: rgba(248, 249, 250, 0.9);
+  --ghost-border: rgba(134, 142, 150, 0.25);
+  --ghost-text: #495057;
+  --danger-bg: rgba(220, 53, 69, 0.1);
+  --danger-border: rgba(220, 53, 69, 0.2);
+  --danger-text: #dc3545;
+  --tag-bg: rgba(134, 142, 150, 0.15);
+  --tag-text: #495057;
+  --badge-bg: rgba(134, 142, 150, 0.18);
+  --badge-text: #495057;
+  --tab-bg: rgba(255, 255, 255, 0.9);
+  --tab-text: #495057;
+  --tab-active-bg-start: #343a40;
+  --tab-active-bg-end: #495057;
   --tab-active-text: #ffffff;
-  --tab-badge-bg: rgba(255, 255, 255, 0.35);
-  --alert-error-bg: rgba(254, 226, 226, 0.92);
-  --alert-error-text: #b91c1c;
-  --overlay-bg: rgba(15, 23, 42, 0.32);
+  --tab-badge-bg: rgba(255, 255, 255, 0.25);
+  --alert-error-bg: rgba(220, 53, 69, 0.1);
+  --alert-error-text: #dc3545;
+  --overlay-bg: rgba(33, 37, 41, 0.5);
   --dialog-bg: #ffffff;
-  --input-bg: #f7f8fa;
-  --input-border: transparent;
-  --input-border-focus: rgba(43, 158, 163, 0.26);
-  --input-shadow-focus: rgba(43, 158, 163, 0.16);
+  --input-bg: rgba(248, 249, 250, 0.95);
+  --input-border: rgba(134, 142, 150, 0.2);
+  --input-border-focus: rgba(73, 80, 87, 0.4);
+  --input-shadow-focus: rgba(73, 80, 87, 0.12);
+  /* 金属质感 */
+  --metal-gradient: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 50%, #dee2e6 100%);
+  --metal-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --metal-border: rgba(134, 142, 150, 0.3);
 }
 
 :global(:root[data-theme='dark']) {
-  --bg-gradient-start: #101418;
-  --bg-gradient-end: #1a2026;
-  --text-primary: #e5e7eb;
-  --text-secondary: #cbd5e1;
-  --text-muted: #9aa3af;
-  --surface-glass: rgba(16, 20, 24, 0.82);
-  --surface-strong: rgba(26, 32, 38, 0.92);
-  --surface-soft: rgba(26, 32, 38, 0.86);
-  --surface-card: rgba(26, 32, 38, 0.9);
-  --surface-border: rgba(148, 163, 184, 0.2);
-  --surface-shadow: rgba(8, 10, 12, 0.5);
-  --shadow-strong: rgba(15, 23, 42, 0.3);
-  --search-bg: rgba(30, 41, 59, 0.64);
-  --accent-start: #36a7ac;
-  --accent-end: #4bb9c7;
-  --accent-text: #8fd6de;
-  --accent-shadow: rgba(54, 167, 172, 0.28);
-  --ghost-bg: rgba(30, 41, 59, 0.66);
-  --ghost-border: rgba(148, 163, 184, 0.3);
-  --ghost-text: #cbd5e1;
-  --danger-bg: rgba(248, 113, 113, 0.2);
-  --danger-border: rgba(252, 165, 165, 0.26);
-  --danger-text: #fca5a5;
-  --tag-bg: rgba(148, 163, 184, 0.22);
-  --tag-text: #cbd5e1;
-  --badge-bg: rgba(148, 163, 184, 0.22);
-  --badge-text: #cbd5e1;
-  --tab-bg: rgba(30, 41, 59, 0.76);
-  --tab-text: #cbd5e1;
-  --tab-active-bg-start: #36a7ac;
-  --tab-active-bg-end: #4bb9c7;
-  --tab-active-text: #f7fbfc;
-  --tab-badge-bg: rgba(15, 23, 42, 0.32);
-  --alert-error-bg: rgba(127, 29, 29, 0.65);
-  --alert-error-text: #fecaca;
-  --overlay-bg: rgba(2, 6, 23, 0.62);
-  --dialog-bg: rgba(16, 20, 24, 0.96);
-  --input-bg: rgba(30, 41, 59, 0.78);
-  --input-border: rgba(148, 163, 184, 0.2);
-  --input-border-focus: rgba(54, 167, 172, 0.42);
-  --input-shadow-focus: rgba(54, 167, 172, 0.18);
+  /* 深色金属质感配色 */
+  --bg-gradient-start: #1a1d21;
+  --bg-gradient-end: #212529;
+  --text-primary: #f8f9fa;
+  --text-secondary: #ced4da;
+  --text-muted: #868e96;
+  --surface-glass: rgba(33, 37, 41, 0.9);
+  --surface-strong: rgba(43, 48, 53, 0.95);
+  --surface-soft: rgba(33, 37, 41, 0.85);
+  --surface-card: rgba(43, 48, 53, 0.9);
+  --surface-border: rgba(134, 142, 150, 0.25);
+  --surface-shadow: rgba(0, 0, 0, 0.3);
+  --shadow-strong: rgba(0, 0, 0, 0.4);
+  --search-bg: rgba(43, 48, 53, 0.8);
+  --accent-start: #adb5bd;
+  --accent-end: #ced4da;
+  --accent-text: #ced4da;
+  --accent-shadow: rgba(173, 181, 189, 0.2);
+  --ghost-bg: rgba(43, 48, 53, 0.8);
+  --ghost-border: rgba(134, 142, 150, 0.35);
+  --ghost-text: #ced4da;
+  --danger-bg: rgba(220, 53, 69, 0.15);
+  --danger-border: rgba(220, 53, 69, 0.3);
+  --danger-text: #f8d7da;
+  --tag-bg: rgba(134, 142, 150, 0.25);
+  --tag-text: #ced4da;
+  --badge-bg: rgba(134, 142, 150, 0.25);
+  --badge-text: #ced4da;
+  --tab-bg: rgba(43, 48, 53, 0.85);
+  --tab-text: #ced4da;
+  --tab-active-bg-start: #495057;
+  --tab-active-bg-end: #6c757d;
+  --tab-active-text: #ffffff;
+  --tab-badge-bg: rgba(0, 0, 0, 0.3);
+  --alert-error-bg: rgba(220, 53, 69, 0.2);
+  --alert-error-text: #f8d7da;
+  --overlay-bg: rgba(0, 0, 0, 0.6);
+  --dialog-bg: #2b3035;
+  --input-bg: rgba(43, 48, 53, 0.9);
+  --input-border: rgba(134, 142, 150, 0.3);
+  --input-border-focus: rgba(173, 181, 189, 0.5);
+  --input-shadow-focus: rgba(173, 181, 189, 0.15);
+  --metal-gradient: linear-gradient(145deg, #343a40 0%, #2b3035 50%, #212529 100%);
+  --metal-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --metal-border: rgba(134, 142, 150, 0.4);
 }
 
 .layout {
@@ -1365,10 +1586,11 @@ function openAdmin() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 40px;
+  padding: 16px 32px;
   background: var(--surface-glass);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 6px 30px var(--surface-shadow);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--surface-border);
+  box-shadow: 0 2px 12px var(--surface-shadow);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -1403,17 +1625,24 @@ function openAdmin() {
 .brand__search {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   background: var(--search-bg);
-  border-radius: 999px;
-  padding: 8px 16px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 8px 14px;
   flex: 1;
-  max-width: 420px;
+  max-width: 360px;
+  transition: all 0.2s ease;
+}
+
+.brand__search:focus-within {
+  border-color: var(--metal-border);
+  box-shadow: 0 0 0 3px var(--input-shadow-focus);
 }
 
 .brand__search .search-input__icon {
-  font-size: 20px;
-  opacity: 0.72;
+  font-size: 16px;
+  opacity: 0.6;
 }
 
 .brand__search input {
@@ -1428,94 +1657,114 @@ function openAdmin() {
 .topbar__actions {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.theme-switcher {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.theme-switcher label {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  font-weight: 600;
+}
+
+/* 图标按钮 - 金属质感 */
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--metal-border);
+  background: var(--metal-gradient);
+  box-shadow: var(--metal-shadow);
   color: var(--text-secondary);
-}
-
-.theme-switcher select {
-  border: 1px solid var(--ghost-border);
-  border-radius: 999px;
-  padding: 6px 14px;
-  background: var(--ghost-bg);
-  color: var(--text-primary);
-  font-weight: 600;
-  font-size: 13px;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: border 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s ease;
 }
 
-.theme-switcher select:disabled {
-  opacity: 0.6;
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-strong);
+  box-shadow: 0 4px 12px var(--surface-shadow);
+  transform: translateY(-1px);
+}
+
+.icon-btn:active {
+  transform: translateY(0);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.theme-switcher select:focus {
-  outline: none;
+.icon-btn--active {
+  background: linear-gradient(145deg, var(--accent-start), var(--accent-end));
+  color: #fff;
   border-color: var(--accent-start);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
 }
 
-.theme-switcher__status {
+.icon-btn--accent {
+  background: linear-gradient(145deg, #343a40, #495057);
+  color: #fff;
+  border-color: #343a40;
+  font-size: 22px;
+  font-weight: 300;
+}
+
+.icon-btn--accent:hover:not(:disabled) {
+  background: linear-gradient(145deg, #495057, #6c757d);
+}
+
+/* 按钮工具提示 */
+.icon-btn-wrapper {
+  position: relative;
+}
+
+.icon-btn-tooltip {
+  position: absolute;
+  bottom: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(52, 58, 64, 0.95);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 4px;
   font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.theme-switcher__hint {
-  font-size: 12px;
-  color: var(--text-muted);
+.icon-btn-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-bottom-color: rgba(52, 58, 64, 0.95);
 }
 
-.edit-toggle {
-  min-width: 96px;
-  letter-spacing: 0.5px;
-}
-
-.add-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-}
-
-.hidden-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.hidden-toggle input {
-  width: 16px;
-  height: 16px;
+.icon-btn-wrapper:hover .icon-btn-tooltip {
+  opacity: 1;
+  visibility: visible;
+  bottom: -40px;
 }
 
 .profile {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 15px;
+  gap: 8px;
+  font-size: 14px;
   color: var(--text-secondary);
 }
 
 .profile__name {
   font-weight: 600;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main {
@@ -1554,85 +1803,223 @@ function openAdmin() {
 .category-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: none;
-  background: var(--tab-bg);
-  color: var(--tab-text);
-  font-weight: 600;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 13px;
   transition: all 0.2s ease;
   cursor: pointer;
-  box-shadow: 0 8px 20px var(--surface-shadow);
+  box-shadow: 0 2px 4px var(--surface-shadow);
+}
+
+.tab:hover {
+  background: var(--surface-strong);
+  border-color: var(--metal-border);
 }
 
 .tab--active {
-  background: linear-gradient(135deg, var(--tab-active-bg-start), var(--tab-active-bg-end));
-  color: var(--tab-active-text);
-  box-shadow: 0 10px 26px var(--accent-shadow);
+  background: linear-gradient(145deg, #343a40, #495057);
+  color: #fff;
+  border-color: #343a40;
+  box-shadow: 0 4px 12px rgba(52, 58, 64, 0.25);
 }
 
 .tab__badge {
-  font-size: 13px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--tab-badge-bg);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .form-card {
   background: var(--surface-strong);
-  border-radius: 24px;
-  padding: 28px;
-  box-shadow: 0 20px 50px var(--surface-shadow);
+  border-radius: 8px;
+  padding: 16px 20px;
+  border: 1px solid var(--metal-border);
+  box-shadow: var(--metal-shadow);
 }
 
 .form-card__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--surface-border);
 }
 
 .form-card__header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-.form-card__header span {
-  color: var(--text-muted);
-  font-size: 14px;
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
-.form-grid {
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.form-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row--2col {
   display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-row--footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-border);
+  margin-top: 4px;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.ai-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.ai-btn-wrapper {
+  position: relative;
+}
+
+.ai-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--metal-border);
+  background: var(--metal-gradient);
+  box-shadow: var(--metal-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 13px;
+}
+
+.ai-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ai-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-btn--fetch {
+  background: linear-gradient(145deg, #495057, #6c757d);
+  border-color: #495057;
+}
+
+.ai-btn--fetch:hover:not(:disabled) {
+  background: linear-gradient(145deg, #6c757d, #868e96);
+}
+
+.ai-btn--ai {
+  background: linear-gradient(145deg, #343a40, #495057);
+  border-color: #343a40;
+}
+
+.ai-btn--ai:hover:not(:disabled) {
+  background: linear-gradient(145deg, #495057, #6c757d);
+}
+
+.ai-btn-tooltip {
+  position: absolute;
+  bottom: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(52, 58, 64, 0.95);
+  color: #fff;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.ai-btn-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: rgba(52, 58, 64, 0.95);
+}
+
+.ai-btn-wrapper:hover .ai-btn-tooltip {
+  opacity: 1;
+  visibility: visible;
+  bottom: -36px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 13px;
+  flex: 1;
 }
 
-.field span {
+.field > span {
   font-weight: 600;
   color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.field--url {
+  flex: 1;
 }
 
 .field input,
 .field textarea {
   border: 1px solid var(--input-border);
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-size: 15px;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
   background: var(--input-bg);
   transition: all 0.2s ease;
   resize: none;
@@ -1644,81 +2031,132 @@ function openAdmin() {
 .field textarea:focus {
   outline: none;
   border-color: var(--input-border-focus);
-  box-shadow: 0 0 0 4px var(--input-shadow-focus);
+  box-shadow: 0 0 0 2px var(--input-shadow-focus);
 }
 
-.field--description {
-  grid-column: 1 / -1;
-}
-
-.field--checkbox {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  grid-column: 1 / -1;
-}
-
-.checkbox-row {
+.toggle-field {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.toggle-label {
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
-.checkbox-row input {
-  width: 18px;
-  height: 18px;
-}
-
-.checkbox-row label {
-  cursor: pointer;
-}
-
-.form-actions {
-  margin-top: 20px;
+.form-buttons {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.button {
+.tags-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  min-height: 34px;
+  align-items: center;
+}
+
+.tags-input:focus-within {
+  border-color: var(--input-border-focus);
+  box-shadow: 0 0 0 2px var(--input-shadow-focus);
+}
+
+.tags-input__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--surface-border);
+}
+
+.tags-input__remove {
+  background: none;
   border: none;
-  border-radius: 12px;
-  padding: 10px 18px;
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.tags-input__remove:hover {
+  color: var(--danger-text);
+}
+
+.tags-input__input {
+  flex: 1;
+  min-width: 80px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  outline: none;
+  padding: 2px 0;
   color: var(--text-primary);
 }
 
+.button {
+  border: 1px solid var(--metal-border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+  background: var(--metal-gradient);
+  box-shadow: var(--metal-shadow);
+}
+
 .button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .button:not(:disabled):hover {
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--surface-shadow);
 }
 
 .button--primary {
-  background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+  background: linear-gradient(145deg, #343a40, #495057);
   color: #fff;
-  box-shadow: 0 12px 30px var(--accent-shadow);
+  border-color: #343a40;
+  box-shadow: 0 4px 12px rgba(52, 58, 64, 0.3);
+}
+
+.button--primary:hover:not(:disabled) {
+  background: linear-gradient(145deg, #495057, #6c757d);
 }
 
 .button--ghost {
-  background: var(--ghost-bg);
-  color: var(--ghost-text);
-  border: 1px solid var(--ghost-border);
-  box-shadow: 0 6px 18px var(--surface-shadow);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  border: 1px solid var(--surface-border);
 }
 
 .button--ghost-alt {
-  background: rgba(255, 255, 255, 0.4);
-  color: var(--accent-text);
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--surface-border);
 }
 
 .button--danger {
@@ -1728,34 +2166,39 @@ function openAdmin() {
 }
 
 .alert {
-  padding: 12px 18px;
-  border-radius: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
 }
 
 .alert--error {
   background: var(--alert-error-bg);
   color: var(--alert-error-text);
+  border: 1px solid var(--danger-border);
 }
 
 .alert--success {
-  background: rgba(220, 252, 231, 0.92);
-  color: #15803d;
+  background: rgba(206, 212, 218, 0.3);
+  color: var(--text-secondary);
+  border: 1px solid var(--surface-border);
 }
 
 .empty {
   text-align: center;
   color: var(--text-muted);
   background: var(--surface-soft);
-  border-radius: 20px;
-  padding: 40px 0;
-  font-size: 17px;
+  border-radius: 12px;
+  padding: 40px 20px;
+  font-size: 15px;
+  border: 1px solid var(--surface-border);
 }
 
 .category-group {
   background: var(--surface-glass);
-  border-radius: 22px;
+  border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 14px 30px var(--surface-shadow);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 4px 16px var(--surface-shadow);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1794,12 +2237,13 @@ function openAdmin() {
 }
 
 .category-badge {
-  background: var(--badge-bg);
-  color: var(--badge-text);
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 13px;
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 600;
+  border: 1px solid var(--surface-border);
 }
 
 .category-toggle {
@@ -1827,13 +2271,14 @@ function openAdmin() {
 
 .card {
   background: var(--surface-card);
-  border-radius: 18px;
+  border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: inset 0 0 0 1px var(--surface-border);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 2px 8px var(--surface-shadow);
+  transition: all 0.2s ease;
   cursor: pointer;
   position: relative;
   height: 100%;
@@ -1841,7 +2286,8 @@ function openAdmin() {
 
 .card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 30px var(--shadow-strong);
+  box-shadow: 0 8px 24px var(--shadow-strong);
+  border-color: var(--metal-border);
 }
 
 .card__header {
@@ -1913,24 +2359,67 @@ function openAdmin() {
 }
 
 .card__action-button {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(148, 163, 184, 0.12);
-  color: var(--text-secondary);
-  font-size: 16px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--metal-border);
+  background: var(--metal-gradient);
+  box-shadow: var(--metal-shadow);
+  color: var(--text-muted);
+  font-size: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  line-height: 1;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .card__action-button:hover {
-  background: rgba(148, 163, 184, 0.2);
-  border-color: rgba(148, 163, 184, 0.5);
+  background: var(--surface-strong);
   color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+/* 卡片按钮提示 */
+.card-btn-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.card-btn-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(52, 58, 64, 0.95);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  pointer-events: none;
+  z-index: 100;
+  margin-top: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.card-btn-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: rgba(52, 58, 64, 0.95);
+}
+
+.card-btn-wrapper:hover .card-btn-tooltip {
+  opacity: 1;
+  visibility: visible;
+  margin-top: 6px;
 }
 
 .card--hidden {
@@ -1943,12 +2432,13 @@ function openAdmin() {
 }
 
 .hidden-chip {
-  background: rgba(148, 163, 184, 0.25);
+  background: var(--surface-soft);
   color: var(--text-muted);
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
   font-weight: 600;
+  border: 1px solid var(--surface-border);
 }
 
 .overlay {
@@ -1959,17 +2449,19 @@ function openAdmin() {
   place-items: center;
   z-index: 100;
   padding: 16px;
+  backdrop-filter: blur(4px);
 }
 
 .dialog {
   background: var(--dialog-bg);
-  border-radius: 20px;
-  width: min(400px, 100%);
+  border-radius: 12px;
+  width: min(380px, 100%);
   padding: 24px;
-  box-shadow: 0 20px 60px var(--surface-shadow);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 16px 48px var(--shadow-strong);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   color: var(--text-primary);
 }
 
@@ -2026,6 +2518,117 @@ function openAdmin() {
   opacity: 0.6;
 }
 
+/* 标签样式 */
+.card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.card__tag {
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid var(--metal-border);
+}
+
+.card__tag--more {
+  background: var(--accent-shadow);
+  color: var(--accent-text);
+  border-color: var(--accent-text);
+}
+
+/* 悬停提示样式 */
+.card__tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: var(--dialog-bg);
+  border: 1px solid var(--metal-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  min-width: 280px;
+  max-width: 360px;
+  box-shadow: var(--metal-shadow), 0 12px 40px var(--shadow-strong);
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.card:hover .card__tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-12px);
+}
+
+.card__tooltip-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.card__tooltip-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.card__tooltip-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.card__tooltip-tag {
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--metal-border);
+}
+
+.card__tooltip-url {
+  font-size: 12px;
+  color: var(--accent-text);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+/* 提示框箭头 */
+.card__tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: var(--dialog-bg);
+}
+
+.card__tooltip::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 9px solid transparent;
+  border-top-color: var(--metal-border);
+}
+
 @media (max-width: 768px) {
   .topbar {
     padding: 16px 20px;
@@ -2067,6 +2670,11 @@ function openAdmin() {
 
   .card__title {
     font-size: 15px;
+  }
+
+  /* 移动端隐藏悬停提示 */
+  .card__tooltip {
+    display: none;
   }
 
   .category-tabs {
@@ -2151,16 +2759,35 @@ function openAdmin() {
     width: 100%;
   }
 
-  .form-grid {
+  .form-row--2col {
     grid-template-columns: 1fr;
   }
 
-  .form-actions {
+  .form-row--footer {
     flex-direction: column;
+    gap: 12px;
     align-items: stretch;
   }
 
-  .form-actions .button,
+  .footer-left {
+    justify-content: space-between;
+  }
+
+  .ai-btn-tooltip,
+  .icon-btn-tooltip,
+  .card-btn-tooltip {
+    display: none;
+  }
+
+  .form-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  .form-buttons .button {
+    flex: 1;
+  }
+
   .topbar__actions .button,
   .card__buttons .button {
     width: 100%;
