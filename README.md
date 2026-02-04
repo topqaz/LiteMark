@@ -38,8 +38,9 @@ docker run -d -p 8080:80 \
   -e DEFAULT_ADMIN_USERNAME=admin \
   -e DEFAULT_ADMIN_PASSWORD=admin123 \
   --name litemark \
-  topqaz/litemark:latest
+  topqaz/litemark:x64
 ```
+# 或 ARM64 架构使用： topqaz/litemark:arm64
 
 访问地址：`http://localhost:8080`，后台入口：`http://localhost:8080/admin`
 

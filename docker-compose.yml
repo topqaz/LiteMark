@@ -1,6 +1,6 @@
 services:
   litemark:
-    image: topqaz/litemark:latest
+    image: topqaz/litemark:x64   #  如果是 ARM 架构设备，请使用 topqaz/litemark:arm64
     container_name: litemark
     restart: unless-stopped
     ports:
