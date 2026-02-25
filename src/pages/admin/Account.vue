@@ -19,6 +19,19 @@
             :disabled="!isAuthenticated || adminSettingsSaving"
           />
         </el-form-item>
+        <el-form-item :label="isMobile ? '' : '当前密码'" required>
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">当前密码 <span class="required-mark">*</span></span>
+          </template>
+          <el-input
+            v-model="adminSettingsForm.currentPassword"
+            type="password"
+            autocomplete="current-password"
+            placeholder="输入当前密码以验证身份"
+            :disabled="!isAuthenticated || adminSettingsSaving"
+            show-password
+          />
+        </el-form-item>
         <el-form-item :label="isMobile ? '' : '新密码'" required>
           <template v-if="isMobile" #label>
             <span class="mobile-label">新密码 <span class="required-mark">*</span></span>
@@ -92,6 +105,7 @@ const apiBase = apiBaseRaw.replace(/\/$/, '');
 // 管理员账号设置
 const adminSettingsForm = reactive({
   username: 'admin',
+  currentPassword: '',
   password: '',
   confirmPassword: ''
 });
@@ -140,6 +154,7 @@ async function loadAdminSettings() {
     }
     const data = (await response.json()) as { username: string };
     adminSettingsForm.username = data.username || 'admin';
+    adminSettingsForm.currentPassword = '';
     adminSettingsForm.password = '';
     adminSettingsForm.confirmPassword = '';
     adminSettingsMessage.value = '';
@@ -155,11 +170,16 @@ async function saveAdminSettings() {
     return;
   }
   const username = adminSettingsForm.username.trim();
+  const currentPassword = adminSettingsForm.currentPassword;
   const password = adminSettingsForm.password;
   const confirm = adminSettingsForm.confirmPassword;
 
   if (!username) {
     adminSettingsError.value = '管理员用户名不能为空';
+    return;
+  }
+  if (!currentPassword) {
+    adminSettingsError.value = '请输入当前密码';
     return;
   }
   if (!password) {
@@ -182,7 +202,11 @@ async function saveAdminSettings() {
   try {
     const response = await requestWithAuth(`${apiBase}/api/admin/credentials`, {
       method: 'PUT',
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({
+        current_password: currentPassword,
+        username,
+        new_password: password
+      })
     });
     if (!response.ok) {
       const message = await response.text();
@@ -190,6 +214,7 @@ async function saveAdminSettings() {
     }
     const data = (await response.json()) as { username: string };
     adminSettingsForm.username = data.username || username;
+    adminSettingsForm.currentPassword = '';
     adminSettingsForm.password = '';
     adminSettingsForm.confirmPassword = '';
     adminSettingsMessage.value = '管理员账号已保存';
