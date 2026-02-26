@@ -65,7 +65,7 @@ async def export_backup(
 ):
     # 获取书签
     result = await session.execute(select(Bookmark))
-    bookmarks = [b.to_dict(include_ai=False) for b in result.scalars().all()]
+    bookmarks = [b.to_dict() for b in result.scalars().all()]
 
     # 获取分类顺序
     result = await session.execute(select(CategoryOrder).order_by(CategoryOrder.order))
@@ -316,7 +316,7 @@ async def trigger_webdav_backup(
 
         # 获取备份数据
         result = await session.execute(select(Bookmark))
-        bookmarks = [b.to_dict(include_ai=False) for b in result.scalars().all()]
+        bookmarks = [b.to_dict() for b in result.scalars().all()]
 
         result = await session.execute(select(CategoryOrder).order_by(CategoryOrder.order))
         category_order = [{"category": c.category, "order": c.order} for c in result.scalars().all()]
