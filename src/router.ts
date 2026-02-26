@@ -9,6 +9,7 @@ import AdminBackup from './pages/admin/Backup.vue';
 import AdminSettings from './pages/admin/Settings.vue';
 import AdminAccount from './pages/admin/Account.vue';
 import AdminAbout from './pages/admin/About.vue';
+import AdminAI from './pages/admin/AI.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -24,6 +25,7 @@ export const router = createRouter({
         { path: 'bookmarks', name: 'admin-bookmarks', component: AdminBookmarks },
         { path: 'categories', name: 'admin-categories', component: AdminCategories },
         { path: 'backup', name: 'admin-backup', component: AdminBackup },
+        { path: 'ai', name: 'admin-ai', component: AdminAI },
         { path: 'settings', name: 'admin-settings', component: AdminSettings },
         { path: 'account', name: 'admin-account', component: AdminAccount },
         { path: 'about', name: 'admin-about', component: AdminAbout }

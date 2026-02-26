@@ -11,3 +11,6 @@ dist
 .DS_Store
 .env.local
 extension
+*.db
+__pycache__
+*.pyc
