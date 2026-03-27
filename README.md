@@ -47,8 +47,6 @@ docker run -d -p 8080:80 \
 ## 更新
 
 ```bash
-# 停止并删除旧容器
-docker-compose down
 # 拉取最新镜像
 docker-compose pull
 # 启动新容器

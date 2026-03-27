@@ -374,7 +374,18 @@ export interface VersionInfo {
   author: string;
 }
 
+export interface UpdateCheckResponse {
+  current_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  github_url: string;
+}
+
 export const versionApi = {
   get: (): Promise<VersionInfo> =>
     request('/version', { method: 'GET' }, false),
+
+  checkLatest: (): Promise<UpdateCheckResponse> =>
+    request('/api/settings/version', { method: 'GET' }),
 };
+

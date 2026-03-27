@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.settings import SiteSettings
 from app.schemas.settings import SettingsResponse, SettingsUpdate, AIConfigResponse, AIConfigUpdate
 from app.utils.security import get_current_user
+from app.version import get_version, get_latest_github_version, is_update_available
 
 router = APIRouter()
 
@@ -57,6 +58,22 @@ async def get_settings(
     """获取站点设置"""
     settings = await get_settings_dict(session)
     return SettingsResponse(**settings)
+
+
+@router.get("/version")
+async def get_version_info(
+    current_user: dict = Depends(get_current_user)
+):
+    """获取当前版本和最新 GitHub 版本"""
+    current = get_version()
+    latest = get_latest_github_version()
+    update_available = is_update_available(current, latest) if latest else False
+    return {
+        "current_version": current,
+        "latest_version": latest,
+        "update_available": update_available,
+        "github_url": "https://github.com/topqaz/LiteMark/releases/latest"
+    }
 
 
 @router.put("", response_model=SettingsResponse)

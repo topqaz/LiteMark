@@ -41,6 +41,16 @@
       </template>
       <p>当前版本：<strong>{{ versionInfo?.version || '加载中...' }}</strong></p>
       <p v-if="versionInfo?.author" class="author">作者：{{ versionInfo.author }}</p>
+      <p v-if="updateInfo">
+        最新版本：<strong>{{ updateInfo.latest_version || '无法获取' }}</strong>
+        <el-tag type="success" v-if="updateInfo.update_available">可更新</el-tag>
+        <el-tag type="info" v-else>已是最新</el-tag>
+      </p>
+      <p v-if="updateInfo && updateInfo.latest_version">
+        <el-link :href="updateInfo.github_url" target="_blank" type="primary" :underline="false">
+          查看 GitHub 最新发布
+        </el-link>
+      </p>
       <p class="copyright">© {{ getShanghaiYear() }} LiteMark by {{ versionInfo?.author || 'topqaz' }}. All rights reserved.</p>
 
     </el-card>
@@ -50,15 +60,22 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { getShanghaiYear } from '../../utils/date.js';
-import { versionApi, type VersionInfo } from '../../api';
+import { versionApi, type VersionInfo, type UpdateCheckResponse } from '../../api';
 
 const versionInfo = ref<VersionInfo | null>(null);
+const updateInfo = ref<UpdateCheckResponse | null>(null);
 
 onMounted(async () => {
   try {
     versionInfo.value = await versionApi.get();
   } catch (err) {
     console.error('获取版本信息失败', err);
+  }
+
+  try {
+    updateInfo.value = await versionApi.checkLatest();
+  } catch (err) {
+    console.error('获取最新版本失败', err);
   }
 });
 </script>
