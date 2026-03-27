@@ -251,10 +251,11 @@ export const settingsApi = {
 // ============ 备份 API ============
 
 export const backupApi = {
-  export: async (): Promise<Blob> => {
+  export: async (format: 'json' | 'csv' | 'html' = 'json'): Promise<Blob> => {
     const apiBase = getApiBase();
     const token = getToken();
-    const response = await fetch(`${apiBase}/api/backup/export`, {
+    const url = `${apiBase}/api/backup/export?format=${format}`;
+    const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -277,6 +278,28 @@ export const backupApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  importFile: (file: File, overwrite = false): Promise<{ success: boolean; imported_bookmarks: number; imported_categories: number }> => {
+    const apiBase = getApiBase();
+    const token = getToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('overwrite', String(overwrite));
+
+    return fetch(`${apiBase}/api/backup/import-file`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    }).then(async (response) => {
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || '导入失败');
+      }
+      return response.json();
+    });
+  },
 };
 
 // ============ AI API ============

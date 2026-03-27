@@ -263,13 +263,17 @@ async def import_bookmarks(
     """批量导入书签"""
     count = 0
     added_categories = set()
+    default_category = "默认分类"  # 默认分类名
 
     for data in bookmarks_data:
+        # 若分类为空，使用默认分类名
+        category = data.get("category") or default_category
+        
         bookmark = Bookmark(
             id=data.get("id") or str(uuid.uuid4()),
             title=data["title"],
             url=data["url"],
-            category=data.get("category"),
+            category=category,
             description=data.get("description"),
             tags=data.get("tags"),
             visible=data.get("visible", True),
@@ -277,10 +281,10 @@ async def import_bookmarks(
         )
         session.add(bookmark)
 
-        # 只在不跳过分类且分类未添加过时处理
-        if not skip_category and bookmark.category and bookmark.category not in added_categories:
-            await ensure_category_exists(session, bookmark.category)
-            added_categories.add(bookmark.category)
+        # 处理分类：自动创建分类记录
+        if not skip_category and category not in added_categories:
+            await ensure_category_exists(session, category)
+            added_categories.add(category)
 
         count += 1
 

@@ -1,9 +1,13 @@
 """
 备份 API
 """
+import csv
+import io
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+import re
+from html import escape
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Form
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from datetime import datetime
@@ -58,8 +62,89 @@ async def get_webdav_config(session: AsyncSession) -> dict:
     return config
 
 
+def _bookmarks_to_csv(bookmarks):
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator='\n')
+    writer.writerow(['id', 'title', 'url', 'category', 'description', 'tags', 'visible', 'order', 'created_at', 'updated_at'])
+    for b in bookmarks:
+        writer.writerow([
+            b.get('id'),
+            b.get('title', ''),
+            b.get('url', ''),
+            b.get('category', ''),
+            b.get('description', ''),
+            b.get('tags', ''),
+            b.get('visible', True),
+            b.get('order', 0),
+            b.get('created_at', ''),
+            b.get('updated_at', ''),
+        ])
+    return output.getvalue()
+
+
+def _bookmarks_to_html(bookmarks):
+    content = [
+        '<!DOCTYPE NETSCAPE-Bookmark-file-1>',
+        '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
+        '<TITLE>LiteMark Bookmarks</TITLE>',
+        '<H1>LiteMark 书签导出</H1>',
+        '<DL><p>'
+    ]
+    for b in bookmarks:
+        title = escape(str(b.get('title', b.get('url', ''))))
+        url = escape(str(b.get('url', '')))
+        add_date = ''
+        if b.get('created_at'):
+            add_date = str(b['created_at'])
+        category = escape(str(b.get('category', ''))) if b.get('category') else ''
+        attrs = f' HREF="{url}"'
+        if add_date:
+            attrs += f' ADD_DATE="{escape(add_date)}"'
+        if b.get('description'):
+            attrs += f' DESCRIPTION="{escape(str(b.get("description")))}"'
+        content.append(f'    <DT><A{attrs}>{title}</A>')
+        if category:
+            content.append(f'    <!-- Category: {category} -->')
+    content.append('</DL><p>')
+    return '\n'.join(content)
+
+
+def _parse_bookmarks_from_csv(text):
+    reader = csv.DictReader(io.StringIO(text))
+    results = []
+    for row in reader:
+        if not row.get('title') or not row.get('url'):
+            continue
+        results.append({
+            'title': row.get('title', '').strip(),
+            'url': row.get('url', '').strip(),
+            'category': row.get('category', '').strip() or None,
+            'description': row.get('description', '').strip() or None,
+            'tags': row.get('tags', '').strip() or None,
+            'visible': row.get('visible', '').strip().lower() not in ['false', '0', 'no', 'n'],
+        })
+    return results
+
+
+def _parse_bookmarks_from_html(text):
+    # 解析简单的 Netscape Bookmark HTML
+    results = []
+    link_patterns = re.findall(r'<A[^>]*HREF="([^"]+)"[^>]*>([^<]+)</A>', text, re.IGNORECASE)
+    for href, title in link_patterns:
+        results.append({
+            'title': title.strip(),
+            'url': href.strip(),
+            'category': None,
+            'description': None,
+            'tags': None,
+            'visible': True,
+        })
+    return results
+
+
 @router.get("/export")
 async def export_backup(
+    format: str = Query('json', regex='^(json|csv|html)$'),
     session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -71,6 +156,27 @@ async def export_backup(
     result = await session.execute(select(CategoryOrder).order_by(CategoryOrder.order))
     category_order = [{"category": c.category, "order": c.order} for c in result.scalars().all()]
 
+    if format == 'csv':
+        csv_data = _bookmarks_to_csv(bookmarks)
+        return StreamingResponse(
+            io.StringIO(csv_data),
+            media_type='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename=litemark-bookmarks-{datetime.now().strftime("%Y-%m-%d")}.csv'
+            }
+        )
+
+    if format == 'html':
+        html_data = _bookmarks_to_html(bookmarks)
+        return StreamingResponse(
+            io.StringIO(html_data),
+            media_type='text/html',
+            headers={
+                'Content-Disposition': f'attachment; filename=litemark-bookmarks-{datetime.now().strftime("%Y-%m-%d")}.html'
+            }
+        )
+
+    # json 默认
     backup_data = {
         "version": VERSION,
         "exported_at": datetime.now().isoformat(),
@@ -116,9 +222,10 @@ async def import_backup(
         else:
             bookmarks_data.append(b.dict() if hasattr(b, 'dict') else dict(b))
 
-    count = await import_bookmarks(session, bookmarks_data, skip_category=True)
+    # 自动创建分类（skip_category=False）
+    count = await import_bookmarks(session, bookmarks_data, skip_category=False)
 
-    # 导入分类顺序
+    # 导入分类顺序（可选，若有提供则更新顺序）
     category_order = data.category_order or data.categoryOrder or []
     categories_count = 0
     added_categories = set()
@@ -133,21 +240,16 @@ async def import_backup(
                 cat_order = 0
 
             if cat_name and cat_name not in added_categories:
-                session.add(CategoryOrder(category=cat_name, order=cat_order))
+                # 查询是否已存在，若存在则更新顺序，否则创建
+                result = await session.execute(
+                    select(CategoryOrder).where(CategoryOrder.category == cat_name)
+                )
+                cat_order_record = result.scalar_one_or_none()
+                if cat_order_record:
+                    cat_order_record.order = cat_order
+                else:
+                    session.add(CategoryOrder(category=cat_name, order=cat_order))
                 added_categories.add(cat_name)
-                categories_count += 1
-    else:
-        # 从书签中提取分类
-        categories = set()
-        for b in bookmarks_data:
-            cat = b.get("category")
-            if cat:
-                categories.add(cat)
-
-        for i, cat in enumerate(sorted(categories)):
-            if cat not in added_categories:
-                session.add(CategoryOrder(category=cat, order=i))
-                added_categories.add(cat)
                 categories_count += 1
 
     await session.commit()
@@ -156,6 +258,81 @@ async def import_backup(
         "success": True,
         "imported_bookmarks": count,
         "imported_categories": categories_count,
+    }
+
+
+@router.post("/import-file")
+async def import_backup_file(
+    file: UploadFile = File(...),
+    overwrite: bool = Form(False),
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """从文件导入书签（支持 CSV/JSON/HTML）"""
+    content = (await file.read()).decode('utf-8', errors='ignore')
+
+    if overwrite:
+        await session.execute(delete(Bookmark))
+        await session.execute(delete(CategoryOrder))
+        await session.commit()
+
+    bookmarks_data = []
+    category_order = []
+
+    if file.filename.lower().endswith('.csv') or file.content_type == 'text/csv':
+        bookmarks_data = _parse_bookmarks_from_csv(content)
+    elif file.filename.lower().endswith('.html') or file.content_type == 'text/html':
+        bookmarks_data = _parse_bookmarks_from_html(content)
+    else:
+        # 尝试 JSON
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail='无法识别的导入文件格式，只支持 CSV/JSON/HTML')
+
+        if isinstance(payload, dict) and 'bookmarks' in payload:
+            bookmarks_data = payload.get('bookmarks', [])
+            category_order = payload.get('category_order', [])
+        elif isinstance(payload, list):
+            bookmarks_data = payload
+        else:
+            raise HTTPException(status_code=400, detail='JSON 数据必须是书签列表或包含 bookmarks 字段')
+
+    if not isinstance(bookmarks_data, list):
+        raise HTTPException(status_code=400, detail='导入的书签数据格式错误')
+
+    # 导入书签时自动创建分类（skip_category=False）
+    imported = await import_bookmarks(session, bookmarks_data, skip_category=False)
+
+    # 如果文件中包含了 category_order 信息，更新分类顺序
+    categories_count = 0
+    if category_order and isinstance(category_order, list):
+        added_categories = set()
+        for cat in category_order:
+            if isinstance(cat, dict):
+                cat_name = cat.get('category')
+                order_val = cat.get('order', 0)
+            else:
+                cat_name = str(cat)
+                order_val = 0
+            if cat_name and cat_name not in added_categories:
+                # 查询是否已存在，若存在则更新顺序，否则创建
+                result = await session.execute(
+                    select(CategoryOrder).where(CategoryOrder.category == cat_name)
+                )
+                cat_order = result.scalar_one_or_none()
+                if cat_order:
+                    cat_order.order = order_val
+                else:
+                    session.add(CategoryOrder(category=cat_name, order=order_val))
+                added_categories.add(cat_name)
+                categories_count += 1
+        await session.commit()
+
+    return {
+        'success': True,
+        'imported_bookmarks': imported,
+        'imported_categories': categories_count,
     }
 
 

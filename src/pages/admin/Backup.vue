@@ -2,6 +2,19 @@
   <div class="backup-page">
     <h2 class="page-title">数据备份</h2>
     <p class="page-desc">导出或导入数据备份文件，用于数据迁移和恢复</p>
+    <el-alert
+      title="支持格式：JSON / CSV / HTML（Netscape 书签格式）"
+      type="info"
+      show-icon
+      :closable="false"
+      style="margin-bottom: 16px;"
+    >
+      <ul style="margin: 8px 0 0 18px; font-size: 14px; line-height: 1.6;">
+        <li><strong>JSON</strong>：完整导出（书签 + 分类顺序），可在“导入备份”直通恢复。</li>
+        <li><strong>CSV</strong>：表格行导出，适合 Excel / 其他工具处理（含 title/url/category/description 等字段）。</li>
+        <li><strong>HTML</strong>：写入浏览器书签标准，支持浏览器一键导入。</li>
+      </ul>
+    </el-alert>
 
     <el-row :gutter="24">
       <el-col :xs="24" :sm="24" :md="12" :lg="12" :xl="12">
@@ -9,15 +22,22 @@
           <template #header>
             <h3>导出备份</h3>
           </template>
-          <p class="backup-description">将当前所有书签和设置导出为 JSON 格式文件</p>
-          <el-button
-            type="primary"
-            :loading="backupExportLoading"
-            :disabled="!isAuthenticated"
-            @click="handleExportBackup"
-          >
-            <el-icon><Download /></el-icon>导出数据
-          </el-button>
+          <p class="backup-description">将当前所有书签和设置导出为 JSON/CSV/HTML 格式文件</p>
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+            <el-select v-model="backupExportFormat" size="small" placeholder="选择格式" style="width: 130px;">
+              <el-option label="JSON" value="json" />
+              <el-option label="CSV" value="csv" />
+              <el-option label="HTML" value="html" />
+            </el-select>
+            <el-button
+              type="primary"
+              :loading="backupExportLoading"
+              :disabled="!isAuthenticated"
+              @click="handleExportBackup"
+            >
+              <el-icon><Download /></el-icon>导出数据
+            </el-button>
+          </div>
           <el-alert
             v-if="backupExportError"
             :title="backupExportError"
@@ -45,7 +65,7 @@
           <input
             ref="backupImportFileInput"
             type="file"
-            accept=".json"
+            accept=".json,.csv,.html"
             style="display: none"
             @change="handleImportBackup"
           />
@@ -240,6 +260,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { backupApi } from '../../api';
 import { getShanghaiDateString } from '../../utils/date.js';
 // 图标已全局注册，直接使用组件名称
 
@@ -257,6 +278,7 @@ const backupExportLoading = ref(false);
 const backupExportMessage = ref('');
 const backupExportError = ref('');
 const backupImportLoading = ref(false);
+const backupExportFormat = ref<'json' | 'csv' | 'html'>('json');
 const backupImportMessage = ref('');
 const backupImportError = ref('');
 const backupImportFileInput = ref<HTMLInputElement | null>(null);
@@ -318,24 +340,14 @@ async function handleExportBackup() {
   backupExportError.value = '';
 
   try {
-    const response = await requestWithAuth(`${apiBase}/api/backup/export`, {
-      method: 'GET'
-    });
+    const format = backupExportFormat.value;
+    const blob = await backupApi.export(format);
 
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message || '导出失败');
-    }
+    const suffix = format === 'json' ? 'json' : format === 'csv' ? 'csv' : 'html';
+    const filename = `litemark-bookmarks-${getShanghaiDateString()}.${suffix}`;
 
-    const data = await response.json();
-
-    // 创建下载链接
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json;charset=utf-8'
-    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    const filename = `litemark-backup-${getShanghaiDateString()}.json`;
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);
@@ -369,8 +381,8 @@ async function handleImportBackup() {
     return;
   }
 
-  if (!file.name.endsWith('.json')) {
-    backupImportError.value = '请选择 JSON 格式的备份文件';
+  if (!['.json', '.csv', '.html'].some((ext) => file.name.toLowerCase().endsWith(ext))) {
+    backupImportError.value = '导入文件只支持 JSON、CSV 或 HTML';
     return;
   }
 
@@ -379,90 +391,20 @@ async function handleImportBackup() {
   backupImportError.value = '';
 
   try {
-    const fileContent = await file.text();
-    let importData: {
-      bookmarks?: Array<{
-        id?: string;
-        title: string;
-        url: string;
-        category?: string;
-        description?: string;
-        visible?: boolean;
-      }>;
-      settings?: {
-        theme?: string;
-        siteTitle?: string;
-        siteIcon?: string;
-      };
-    };
-
-    try {
-      importData = JSON.parse(fileContent);
-    } catch (parseError) {
-      throw new Error('文件格式错误：无法解析 JSON 内容');
-    }
-
-    if (!importData.bookmarks && !importData.settings) {
-      throw new Error('备份文件格式错误：未找到书签或设置数据');
-    }
-
-    // 如果选择覆盖，需要确认
     if (backupImportOverwrite.value) {
-      try {
-        await ElMessageBox.confirm('确定要覆盖现有数据吗？此操作无法撤销！', '警告', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: 'warning'
-        });
-      } catch {
-        backupImportLoading.value = false;
-        return;
-      }
+      await ElMessageBox.confirm('确定要覆盖现有数据吗？此操作无法撤销！', '警告', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      });
     }
 
-    const response = await requestWithAuth(`${apiBase}/api/backup/import`, {
-      method: 'POST',
-      body: JSON.stringify({
-        ...importData,
-        overwrite: backupImportOverwrite.value
-      })
-    });
-
-    if (!response.ok) {
-      let errorMessage = '导入失败';
-      try {
-        const errorData = (await response.json()) as { error?: string };
-        errorMessage = errorData.error || errorMessage;
-      } catch {
-        errorMessage = await response.text() || errorMessage;
-      }
-      throw new Error(errorMessage);
-    }
-
-    const result = (await response.json()) as {
-      success: boolean;
-      importedBookmarks: number;
-      updatedSettings: boolean;
-      totalBookmarks: number;
-      errors?: string[];
-    };
+    const result = await backupApi.importFile(file, backupImportOverwrite.value);
 
     if (result.success) {
-      let message = '';
-      if (result.importedBookmarks > 0) {
-        message += `成功导入 ${result.importedBookmarks} 个书签`;
-      }
-      if (result.updatedSettings) {
-        message += message ? '，设置已更新' : '设置已更新';
-      }
-      if (result.errors && result.errors.length > 0) {
-        message += `，${result.errors.length} 个错误`;
-        console.warn('导入错误:', result.errors);
-      }
-      backupImportMessage.value = message || '导入成功';
+      backupImportMessage.value = `成功导入 ${result.imported_bookmarks} 个书签，分类导入 ${result.imported_categories} 个`;
       ElMessage.success(backupImportMessage.value);
 
-      // 清空文件选择器
       if (backupImportFileInput.value) {
         backupImportFileInput.value.value = '';
       }
@@ -471,10 +413,8 @@ async function handleImportBackup() {
       throw new Error('导入失败');
     }
   } catch (err) {
-    if (err !== 'cancel') {
-      backupImportError.value = err instanceof Error ? err.message : '导入失败';
-      ElMessage.error(backupImportError.value);
-    }
+    backupImportError.value = err instanceof Error ? err.message : '导入失败';
+    ElMessage.error(backupImportError.value);
   } finally {
     backupImportLoading.value = false;
   }
