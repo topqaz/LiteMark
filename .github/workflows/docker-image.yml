@@ -46,5 +46,5 @@ jobs:
           topqaz/litemark:amd64-${{ steps.vars.outputs.VERSION }}
           topqaz/litemark:arm64-${{ steps.vars.outputs.VERSION }}
 
-        cache-from: type=registry,ref= topqaz/litemark:cache
-        cache-to: type=registry,ref= topqaz/litemark:cache,mode=max
+        cache-from: type=registry,ref=topqaz/litemark:cache
+        cache-to: type=registry,ref=topqaz/litemark:cache,mode=max
