@@ -1,18 +1,50 @@
-name: Docker Image CI
+name: Docker Multi-Arch Build & Push
 
 on:
   push:
-    branches: [ "v2" ]
-  pull_request:
-    branches: [ "v2" ]
+    tags:
+      - "*.*.*"   # 只有打版本 tag 才触发
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Extract version
+      id: vars
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Build and Push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        platforms: linux/amd64,linux/arm64
+
+        tags: |
+          topqaz/litemark:latest
+          topqaz/litemark:${{ steps.vars.outputs.VERSION }}
+
+
+          topqaz/litemark:amd64
+          topqaz/litemark:arm64
+          topqaz/litemark:amd64-${{ steps.vars.outputs.VERSION }}
+          topqaz/litemark:arm64-${{ steps.vars.outputs.VERSION }}
+
+        cache-from: type=registry,ref= topqaz/litemark:cache
+        cache-to: type=registry,ref= topqaz/litemark:cache,mode=max
