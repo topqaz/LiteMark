@@ -35,6 +35,20 @@ class AIConfigUpdate(BaseModel):
     ai_model: Optional[str] = None
 
 
+class MCPConfigResponse(BaseModel):
+    """MCP 配置响应"""
+    mcp_enabled: bool = False
+    mcp_token: str = ""
+    mcp_allowed_origins: str = ""
+
+
+class MCPConfigUpdate(BaseModel):
+    """更新 MCP 配置"""
+    mcp_enabled: Optional[bool] = None
+    mcp_token: Optional[str] = None
+    mcp_allowed_origins: Optional[str] = None
+
+
 class WebDAVConfig(BaseModel):
     """WebDAV 配置"""
     url: str = ""

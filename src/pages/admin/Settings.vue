@@ -85,11 +85,134 @@
         style="margin-top: 16px;"
       />
     </el-card>
+
+    <el-card class="settings-card mcp-card">
+      <template #header>
+        <h3>MCP 设置</h3>
+      </template>
+      <el-alert
+        class="mcp-help"
+        type="info"
+        :closable="false"
+        show-icon
+      >
+        <p>MCP 用于让支持 Streamable HTTP 的 AI 客户端直接管理 LiteMark 书签。启用后，客户端通过 MCP 地址和 Token 连接，不需要暴露管理员账号密码。</p>
+        <p>桌面客户端、命令行 Agent、服务器 Agent 通常不会携带浏览器 Origin，“允许来源”留空即可；只有网页端 AI 客户端从浏览器直接访问时，才需要填写对应网站来源。</p>
+      </el-alert>
+      <el-form :model="mcpForm" :label-width="isMobile ? '0px' : '120px'" @submit.prevent="saveMcpSettings">
+        <el-form-item :label="isMobile ? '' : '启用 MCP'">
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">启用 MCP</span>
+          </template>
+          <el-switch
+            v-model="mcpForm.enabled"
+            :disabled="!isAuthenticated || mcpSaving || mcpLoading"
+            active-text="开启"
+            inactive-text="关闭"
+          />
+        </el-form-item>
+        <el-form-item :label="isMobile ? '' : 'MCP 地址'">
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">MCP 地址</span>
+          </template>
+          <div class="field-stack">
+            <el-input :model-value="mcpEndpoint" readonly>
+              <template #append>
+                <el-button @click="copyText(mcpEndpoint)">复制</el-button>
+              </template>
+            </el-input>
+            <div class="setting-tip">把这个地址填到 AI 客户端的远程 MCP URL 中。</div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="isMobile ? '' : 'Token'" required>
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">Token <span class="required-mark">*</span></span>
+          </template>
+          <div class="field-stack">
+            <el-input
+              v-model="mcpForm.token"
+              show-password
+              maxlength="256"
+              placeholder="点击生成 Token"
+              :disabled="!isAuthenticated || mcpSaving || mcpLoading"
+            >
+              <template #append>
+                <el-button
+                  :loading="mcpTokenGenerating"
+                  :disabled="!isAuthenticated"
+                  @click="generateMcpToken"
+                >
+                  生成
+                </el-button>
+              </template>
+            </el-input>
+            <div class="setting-tip">Token 相当于 MCP 专用访问密钥。重新生成后，旧客户端配置会失效。</div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="isMobile ? '' : '允许来源'">
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">允许来源</span>
+          </template>
+          <div class="field-stack">
+            <el-input
+              v-model="mcpForm.allowedOrigins"
+              maxlength="1000"
+              placeholder="例如：https://example.com，留空即可用于客户端 Agent"
+              :disabled="!isAuthenticated || mcpSaving || mcpLoading"
+            />
+            <div class="setting-tip">客户端 Agent 通常没有 Origin，建议留空；网页端客户端才填写网页域名，多个来源用英文逗号分隔。</div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="isMobile ? '' : '客户端配置'">
+          <template v-if="isMobile" #label>
+            <span class="mobile-label">客户端配置</span>
+          </template>
+          <div class="field-stack">
+            <el-input :model-value="mcpClientConfig" type="textarea" :rows="8" readonly />
+            <div class="setting-tip">保存设置后，将这段配置复制到支持远程 MCP 的 AI 客户端。</div>
+          </div>
+        </el-form-item>
+        <el-form-item class="form-submit-item">
+          <el-button
+            type="primary"
+            :loading="mcpSaving"
+            :disabled="!isAuthenticated"
+            @click="saveMcpSettings"
+            class="submit-button"
+          >
+            保存 MCP 设置
+          </el-button>
+          <el-button
+            :disabled="!mcpClientConfig"
+            @click="copyText(mcpClientConfig)"
+            class="copy-config-button"
+          >
+            复制配置
+          </el-button>
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="mcpError"
+        :title="mcpError"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-top: 16px;"
+      />
+      <el-alert
+        v-else-if="mcpMessage"
+        :title="mcpMessage"
+        type="success"
+        :closable="false"
+        show-icon
+        style="margin-top: 16px;"
+      />
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch, onUnmounted } from 'vue';
+import { computed, onMounted, reactive, ref, watch, onUnmounted } from 'vue';
 import { ElMessage } from 'element-plus';
 
 const DEFAULT_TITLE = '个人书签';
@@ -121,9 +244,44 @@ const siteSettingsSaving = ref(false);
 const siteSettingsMessage = ref('');
 const siteSettingsError = ref('');
 
+const mcpForm = reactive({
+  enabled: false,
+  token: '',
+  allowedOrigins: ''
+});
+const mcpLoading = ref(false);
+const mcpSaving = ref(false);
+const mcpTokenGenerating = ref(false);
+const mcpMessage = ref('');
+const mcpError = ref('');
+
 const storedToken = typeof window !== 'undefined' ? window.localStorage.getItem('bookmark_token') : null;
 const authToken = ref<string | null>(storedToken);
 const isAuthenticated = ref(Boolean(storedToken));
+
+const mcpEndpoint = computed(() => {
+  if (apiBase) {
+    return `${apiBase}/mcp`;
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/mcp`;
+  }
+  return '/mcp';
+});
+
+const mcpClientConfig = computed(() => {
+  const endpoint = mcpEndpoint.value;
+  return JSON.stringify({
+    mcpServers: {
+      litemark: {
+        url: endpoint,
+        headers: {
+          Authorization: `Bearer ${mcpForm.token || 'your-mcp-token'}`
+        }
+      }
+    }
+  }, null, 2);
+});
 
 // 移动端检测
 const isMobile = ref(false);
@@ -236,6 +394,35 @@ async function loadSettings() {
   }
 }
 
+async function loadMcpSettings() {
+  if (!isAuthenticated.value) {
+    return;
+  }
+  mcpLoading.value = true;
+  mcpError.value = '';
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/settings/mcp`, {
+      method: 'GET'
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || '加载 MCP 设置失败');
+    }
+    const config = (await response.json()) as {
+      mcp_enabled: boolean;
+      mcp_token: string;
+      mcp_allowed_origins: string;
+    };
+    mcpForm.enabled = config.mcp_enabled;
+    mcpForm.token = config.mcp_token;
+    mcpForm.allowedOrigins = config.mcp_allowed_origins;
+  } catch (err) {
+    mcpError.value = err instanceof Error ? err.message : '加载 MCP 设置失败';
+  } finally {
+    mcpLoading.value = false;
+  }
+}
+
 watch(currentTheme, (value) => {
   applyTheme(value);
 });
@@ -324,8 +511,96 @@ async function saveSiteSettings() {
   }
 }
 
+async function saveMcpSettings() {
+  if (!isAuthenticated.value) {
+    ElMessage.warning('请先登录');
+    return;
+  }
+  if (mcpForm.enabled && !mcpForm.token.trim()) {
+    mcpError.value = '启用 MCP 前请先生成或填写 Token';
+    return;
+  }
+  mcpSaving.value = true;
+  mcpMessage.value = '';
+  mcpError.value = '';
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/settings/mcp`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        mcp_enabled: mcpForm.enabled,
+        mcp_token: mcpForm.token.trim(),
+        mcp_allowed_origins: mcpForm.allowedOrigins.trim()
+      })
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || '保存 MCP 设置失败');
+    }
+    const config = (await response.json()) as {
+      mcp_enabled: boolean;
+      mcp_token: string;
+      mcp_allowed_origins: string;
+    };
+    mcpForm.enabled = config.mcp_enabled;
+    mcpForm.token = config.mcp_token;
+    mcpForm.allowedOrigins = config.mcp_allowed_origins;
+    mcpMessage.value = 'MCP 设置已保存';
+    ElMessage.success('MCP 设置已保存');
+  } catch (err) {
+    mcpError.value = err instanceof Error ? err.message : '保存 MCP 设置失败';
+    ElMessage.error(mcpError.value);
+  } finally {
+    mcpSaving.value = false;
+  }
+}
+
+async function generateMcpToken() {
+  if (!isAuthenticated.value) {
+    ElMessage.warning('请先登录');
+    return;
+  }
+  mcpTokenGenerating.value = true;
+  mcpMessage.value = '';
+  mcpError.value = '';
+  try {
+    const response = await requestWithAuth(`${apiBase}/api/settings/mcp/token`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || '生成 Token 失败');
+    }
+    const config = (await response.json()) as {
+      mcp_enabled: boolean;
+      mcp_token: string;
+      mcp_allowed_origins: string;
+    };
+    mcpForm.enabled = config.mcp_enabled;
+    mcpForm.token = config.mcp_token;
+    mcpForm.allowedOrigins = config.mcp_allowed_origins;
+    mcpMessage.value = 'Token 已生成';
+    ElMessage.success('Token 已生成');
+  } catch (err) {
+    mcpError.value = err instanceof Error ? err.message : '生成 Token 失败';
+    ElMessage.error(mcpError.value);
+  } finally {
+    mcpTokenGenerating.value = false;
+  }
+}
+
+async function copyText(text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    ElMessage.success('已复制');
+  } catch {
+    ElMessage.error('复制失败');
+  }
+}
+
 onMounted(() => {
   loadSettings();
+  loadMcpSettings();
   checkMobile();
   window.addEventListener('resize', checkMobile);
 });
@@ -355,6 +630,36 @@ onUnmounted(() => {
 
 .settings-card {
   margin-bottom: 24px;
+}
+
+.mcp-help {
+  margin-bottom: 20px;
+}
+
+.mcp-help p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.mcp-help p + p {
+  margin-top: 6px;
+}
+
+.field-stack {
+  width: 100%;
+}
+
+.setting-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.mcp-card :deep(.el-textarea__inner) {
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .settings-card h3 {
@@ -449,6 +754,12 @@ onUnmounted(() => {
 
   .submit-button {
     width: 100%;
+  }
+
+  .copy-config-button {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 12px;
   }
 
   .settings-card :deep(.el-alert) {

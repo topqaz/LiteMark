@@ -173,6 +173,51 @@ https://github.com/topqaz/LiteMark-extension-browser
 
 ---
 
+## MCP 工具
+
+LiteMark 内置 Streamable HTTP MCP Server，支持 AI 客户端直接整理、添加、修改、隐藏、删除书签，以及管理分类顺序。MCP 默认关闭，可在后台管理中启用并生成专用 Token。
+
+### 启用 MCP
+
+进入后台管理 → 系统设置 → MCP 设置：
+
+1. 点击“生成”创建 MCP Token
+2. 开启 MCP
+3. 保存 MCP 设置
+4. 复制客户端配置到支持 Streamable HTTP MCP 的 AI 客户端
+
+启用后，MCP 地址为：
+
+```text
+https://your-litemark.example.com/mcp
+```
+
+### 客户端配置示例
+
+```json
+{
+  "mcpServers": {
+    "litemark": {
+      "url": "https://your-litemark.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer replace-with-a-long-random-token"
+      }
+    }
+  }
+}
+```
+
+暴露的工具包括：
+
+- `list_litemark_bookmarks`：查询书签，可按分类、关键词过滤
+- `add_litemark_bookmark`：添加书签
+- `update_litemark_bookmark`：修改标题、链接、分类、描述、标签、可见性和排序值
+- `delete_litemark_bookmark`：删除书签
+- `list_litemark_categories` / `add_litemark_category` / `rename_litemark_category` / `delete_litemark_category`
+- `reorder_litemark_bookmarks` / `reorder_litemark_categories`
+
+---
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |

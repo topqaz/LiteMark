@@ -1,6 +1,7 @@
 """
 FastAPI 应用入口
 """
+import contextlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,10 +25,19 @@ async def lifespan(app: FastAPI):
     await init_admin()
     await load_ai_config()
     await init_scheduler()
-    yield
-    # 关闭时
-    shutdown_scheduler()
-    print("关闭 LiteMark API...")
+
+    async with contextlib.AsyncExitStack() as stack:
+        from app.mcp_server import mcp
+
+        await stack.enter_async_context(mcp.session_manager.run())
+        print("✓ MCP Streamable HTTP 端点已就绪: /mcp")
+
+        try:
+            yield
+        finally:
+            # 关闭时
+            shutdown_scheduler()
+            print("关闭 LiteMark API...")
 
 
 async def load_ai_config():
@@ -73,6 +83,10 @@ app.include_router(bookmarks.router, prefix="/api/bookmarks", tags=["书签"])
 app.include_router(settings_api.router, prefix="/api/settings", tags=["设置"])
 app.include_router(backup.router, prefix="/api/backup", tags=["备份"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+
+from app.mcp_server import create_mcp_asgi_app
+
+app.mount("/mcp", create_mcp_asgi_app(), name="mcp")
 
 
 @app.get("/", tags=["健康检查"])

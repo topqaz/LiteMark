@@ -134,6 +134,12 @@ export interface AIConfig {
   ai_model: string;
 }
 
+export interface MCPConfig {
+  mcp_enabled: boolean;
+  mcp_token: string;
+  mcp_allowed_origins: string;
+}
+
 export interface BatchProcessResponse {
   processed: number;
   failed: number;
@@ -246,6 +252,18 @@ export const settingsApi = {
 
   testAIConfig: (): Promise<{ success: boolean; message: string }> =>
     request('/api/settings/ai/test', { method: 'POST' }),
+
+  getMCPConfig: (): Promise<MCPConfig> =>
+    request('/api/settings/mcp', { method: 'GET' }),
+
+  updateMCPConfig: (data: Partial<MCPConfig>): Promise<MCPConfig> =>
+    request('/api/settings/mcp', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  rotateMCPToken: (): Promise<MCPConfig> =>
+    request('/api/settings/mcp/token', { method: 'POST' }),
 };
 
 // ============ 备份 API ============

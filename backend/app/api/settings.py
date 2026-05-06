@@ -1,13 +1,22 @@
 """
 设置 API
 """
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
 from app.models.settings import SiteSettings
-from app.schemas.settings import SettingsResponse, SettingsUpdate, AIConfigResponse, AIConfigUpdate
+from app.schemas.settings import (
+    SettingsResponse,
+    SettingsUpdate,
+    AIConfigResponse,
+    AIConfigUpdate,
+    MCPConfigResponse,
+    MCPConfigUpdate,
+)
 from app.utils.security import get_current_user
 from app.version import get_version, get_latest_github_version, is_update_available
 
@@ -27,6 +36,26 @@ DEFAULT_AI_CONFIG = {
     "ai_base_url": "https://api.openai.com/v1",
     "ai_model": "gpt-4o-mini",
 }
+
+# MCP 默认配置
+DEFAULT_MCP_CONFIG = {
+    "mcp_enabled": "false",
+    "mcp_token": "",
+    "mcp_allowed_origins": "",
+}
+
+
+async def upsert_setting(session: AsyncSession, key: str, value: str):
+    """创建或更新单个设置项"""
+    result = await session.execute(
+        select(SiteSettings).where(SiteSettings.key == key)
+    )
+    setting = result.scalar_one_or_none()
+
+    if setting:
+        setting.value = value
+    else:
+        session.add(SiteSettings(key=key, value=value))
 
 
 async def get_settings_dict(session: AsyncSession) -> dict:
@@ -49,6 +78,22 @@ async def get_ai_config_dict(session: AsyncSession) -> dict:
         ai_config[key] = settings.get(key, DEFAULT_AI_CONFIG[key])
 
     return ai_config
+
+
+async def get_mcp_config_dict(session: AsyncSession) -> dict:
+    """获取 MCP 配置字典"""
+    result = await session.execute(select(SiteSettings))
+    settings = {s.key: s.value for s in result.scalars().all()}
+
+    config = {}
+    for key, default in DEFAULT_MCP_CONFIG.items():
+        config[key] = settings.get(key, default)
+
+    return {
+        "mcp_enabled": config["mcp_enabled"].lower() == "true",
+        "mcp_token": config["mcp_token"],
+        "mcp_allowed_origins": config["mcp_allowed_origins"],
+    }
 
 
 @router.get("", response_model=SettingsResponse)
@@ -87,15 +132,7 @@ async def update_settings(
 
     for key, value in update_data.items():
         if value is not None:
-            result = await session.execute(
-                select(SiteSettings).where(SiteSettings.key == key)
-            )
-            setting = result.scalar_one_or_none()
-
-            if setting:
-                setting.value = value
-            else:
-                session.add(SiteSettings(key=key, value=value))
+            await upsert_setting(session, key, value)
 
     await session.commit()
 
@@ -124,15 +161,7 @@ async def update_ai_config(
 
     for key, value in update_data.items():
         if value is not None:
-            result = await session.execute(
-                select(SiteSettings).where(SiteSettings.key == key)
-            )
-            setting = result.scalar_one_or_none()
-
-            if setting:
-                setting.value = value
-            else:
-                session.add(SiteSettings(key=key, value=value))
+            await upsert_setting(session, key, value)
 
     await session.commit()
 
@@ -174,3 +203,56 @@ async def reload_ai_config(session: AsyncSession):
         "base_url": config.get("ai_base_url") or None,
         "model": config.get("ai_model") or "gpt-4o-mini",
     }
+
+
+@router.get("/mcp", response_model=MCPConfigResponse)
+async def get_mcp_config(
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """获取 MCP 配置"""
+    config = await get_mcp_config_dict(session)
+    return MCPConfigResponse(**config)
+
+
+@router.put("/mcp", response_model=MCPConfigResponse)
+async def update_mcp_config(
+    data: MCPConfigUpdate,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """更新 MCP 配置"""
+    update_data = data.model_dump(exclude_unset=True)
+
+    if update_data.get("mcp_enabled") is True:
+        current = await get_mcp_config_dict(session)
+        token = update_data.get("mcp_token", current.get("mcp_token", ""))
+        if not token or not str(token).strip():
+            raise HTTPException(status_code=400, detail="启用 MCP 前请先生成或填写 Token")
+
+    for key, value in update_data.items():
+        if value is None:
+            continue
+        if key == "mcp_enabled":
+            await upsert_setting(session, key, "true" if value else "false")
+        elif key in ("mcp_token", "mcp_allowed_origins"):
+            await upsert_setting(session, key, str(value).strip())
+
+    await session.commit()
+
+    config = await get_mcp_config_dict(session)
+    return MCPConfigResponse(**config)
+
+
+@router.post("/mcp/token", response_model=MCPConfigResponse)
+async def rotate_mcp_token(
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """生成新的 MCP Token"""
+    token = f"lmcp_{secrets.token_urlsafe(32)}"
+    await upsert_setting(session, "mcp_token", token)
+    await session.commit()
+
+    config = await get_mcp_config_dict(session)
+    return MCPConfigResponse(**config)
