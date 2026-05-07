@@ -7,6 +7,7 @@ import json
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from sqlalchemy import select
 
 from app.database import async_session_maker, init_db
@@ -35,6 +36,9 @@ mcp = FastMCP(
     ),
     stateless_http=True,
     streamable_http_path="/",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    ),
 )
 
 
