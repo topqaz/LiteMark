@@ -20,7 +20,9 @@ COPY package.json package-lock.json* yarn.lock* ./
 RUN set -x && \
     if [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
     elif [ -f package-lock.json ]; then npm ci; \
-    else npm install; fi
+    else npm install; fi && \
+    npm cache clean --force && \
+    rm -rf ~/.npm
 
 # 复制前端源码
 COPY index.html tsconfig.json tsconfig.node.json vite.config.ts ./
