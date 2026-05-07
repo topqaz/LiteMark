@@ -2,7 +2,7 @@ import json
 from urllib import request, error
 from typing import Optional
 
-VERSION = "2.0.2"
+VERSION = "2.1.0"
 
 VERSION_INFO = {
     "version": VERSION,
