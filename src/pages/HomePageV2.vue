@@ -1820,11 +1820,19 @@ function removeTag(index: number) {
   transition: all 0.2s ease;
   cursor: pointer;
   box-shadow: 0 2px 4px var(--surface-shadow);
+  transform: translateY(0);
+}
+
+.tab span,
+.tab__badge {
+  transition: color 0.2s ease, background 0.2s ease;
 }
 
 .tab:hover {
   background: var(--surface-strong);
   border-color: var(--metal-border);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px var(--surface-shadow);
 }
 
 .tab--active {
@@ -1832,6 +1840,19 @@ function removeTag(index: number) {
   color: #fff;
   border-color: #343a40;
   box-shadow: 0 4px 12px rgba(52, 58, 64, 0.25);
+}
+
+.tab--active:hover {
+  background: linear-gradient(145deg, #343a40, #495057);
+  color: #fff;
+  border-color: #343a40;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(52, 58, 64, 0.32);
+}
+
+.tab--active:hover span,
+.tab--active:hover .tab__badge {
+  color: #fff;
 }
 
 .tab__badge {
