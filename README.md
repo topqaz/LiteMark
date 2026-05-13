@@ -55,7 +55,9 @@ Please click on the link above to view the documentation in your preferred langu
 - 🐳 Docker Deployment
 
 ---
+Thank you to the **LinuxDo** community for your support!
 
+[![LinuxDo](https://img.shields.io/badge/Community-LinuxDo-blue?style=for-the-badge)](https://linux.do/)
 ---
 
 For more information, please select your language above.
