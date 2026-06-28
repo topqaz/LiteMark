@@ -17,7 +17,7 @@ LiteMark is a personal bookmark management application based on **Vue 3 + FastAP
 - 🤖 **AI-Powered Features**: Smart category recommendation, content summarization, tag extraction, quick bookmark addition
 - 🔐 **Admin Panel**: Located at `/admin`, includes login verification, site settings, backup management, etc.
 - 💾 **WebDAV Scheduled Backup**: Support for configuring WebDAV server for automatic scheduled backups
-- 🐳 **Docker Deployment**: One-click deployment supporting both x64 and ARM64 architectures
+- 🐳 **Docker Deployment**: Supports both x64 and ARM64 architectures
 
 ---
 
@@ -25,7 +25,7 @@ LiteMark is a personal bookmark management application based on **Vue 3 + FastAP
 
 ### Linux One-Click Deployment Script
 
-The script lets you choose Docker local deployment or independent Cloudflare Workers deployment interactively:
+The script is for independent Cloudflare Workers deployment. Use the manual commands below for Docker deployment and updates:
 
 ```bash
 # Download the script from GitHub and run it
@@ -66,8 +66,6 @@ The one-click deployment script supports two Workers deployment runtimes:
 - `local`: uses Node.js, npm, and Wrangler installed on the host.
 - `docker`: runs Node.js, npm, and Wrangler inside a `node:20-alpine` Docker container, so Node.js is not required on the host.
 
-Cloudflare Workers deployment always uses an API Token. Create a Cloudflare API Token with permissions to create/edit Workers and D1 resources first; the script will prompt you to enter it.
-
 1. Deploy with the one-click script:
 
 ```bash
@@ -76,7 +74,52 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-After choosing `Cloudflare Workers Deployment`, enter the Cloudflare API Token when prompted; enter `docker` at the runtime prompt if Node.js is not installed locally.
+After running the script, enter the Cloudflare API Token when prompted. The script automatically detects the runtime: it uses local Node.js/npm when available, or a `node:20-alpine` Docker container when Node.js is not installed but Docker is available. If `curl`/`wget`, `tar`, or Docker is missing, the script prompts whether to update the system and install the missing dependencies automatically.
+
+The script asks for the operation first:
+
+- `1) 新部署 Cloudflare Workers`: new deployment; enter the Worker name, D1 database name, default admin username, and default admin password when prompted. It creates a new D1 database by default; if a database with the same name already exists, the script tries to find and reuse it automatically.
+- `2) 更新 Cloudflare Workers`: update deployment; uploads the latest Worker code and frontend assets only. Enter the deployed Worker name and D1 database name when prompted, and the script finds `database_id` automatically. It does not recreate D1 or change site data, accounts, or passwords.
+
+For new deployments, the script prompts for these values and provides defaults:
+
+- Worker name: `litemark`
+- D1 database name: `litemark`
+- Default admin username: `admin`
+- Default admin password: `admin123`
+- `JWT_SECRET`: generated automatically
+
+The Worker name may contain only lowercase letters, numbers, and dashes. Do not enter spaces or non-ASCII characters.
+
+Override the defaults with environment variables before running the script:
+
+```bash
+export LITEMARK_WORKER_NAME=my-litemark
+export LITEMARK_D1_DATABASE=my-litemark
+export LITEMARK_ADMIN_USERNAME=admin
+export LITEMARK_ADMIN_PASSWORD=change-me
+export LITEMARK_JWT_SECRET=change-this-secret
+export LITEMARK_CREATE_D1=y  # y=create D1, n=use existing D1
+./deploy.sh
+```
+
+Cloudflare Workers deployment always uses an API Token. The script prompts for the token and validates it before deployment. The token needs at least:
+
+- `User / Memberships / Read`
+- `Account / D1 / Edit`
+- `Account / Workers Scripts / Edit`
+
+Create the token:
+
+1. Open the Cloudflare API Tokens page: <https://dash.cloudflare.com/profile/api-tokens>
+2. Click `Create Token`, then choose `Create Custom Token`.
+3. Add the 3 permissions above, and select your account under account resources.
+4. Click `Continue to summary`, then `Create Token`.
+5. Copy the generated token. It is shown only once; paste it into the `Cloudflare API Token` prompt when running the script.
+
+Permission example:
+
+![Cloudflare API Token permissions](project_img/cf_token1.jpg)
 
 You can also deploy manually with local Node.js. First set and verify the Cloudflare API Token:
 
@@ -125,11 +168,19 @@ After deployment, visit the Cloudflare Workers URL or your custom domain.
 
 ## Updates
 
+Update Docker local deployment manually:
+
 ```bash
 # Pull the latest image
 docker-compose pull
 # Start new container
 docker-compose up -d
+```
+
+Update Cloudflare Workers with the one-click script, then choose `2) 更新 Cloudflare Workers` and enter the deployed Worker name and D1 database name:
+
+```bash
+./deploy.sh
 ```
 
 ### docker-compose.yml Example
