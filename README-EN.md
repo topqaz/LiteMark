@@ -61,14 +61,32 @@ Cloudflare Workers deployment is an independent deployment option. It runs the A
 
 The Workers version currently supports login, bookmark management, category management, site settings, JSON/CSV/HTML export, JSON/CSV/HTML file import, page-title fetching, OpenAI-compatible AI summarization/classification/quick-add, WebDAV configuration/testing/manual backup/scheduled backup/retention cleanup, basic MCP tool calls, and OAuth Client Credentials. WebDAV scheduled backup is evaluated in Asia/Shanghai time; AI background batch processing is still best handled by the Docker/FastAPI version.
 
-1. Install dependencies and log in to Cloudflare:
+The one-click deployment script supports two Workers deployment runtimes:
+
+- `local`: uses Node.js, npm, and Wrangler installed on the host.
+- `docker`: runs Node.js, npm, and Wrangler inside a `node:20-alpine` Docker container, so Node.js is not required on the host.
+
+Cloudflare Workers deployment always uses an API Token. Create a Cloudflare API Token with permissions to create/edit Workers and D1 resources first; the script will prompt you to enter it.
+
+1. Deploy with the one-click script:
 
 ```bash
-npm install
-npx wrangler login
+curl -fsSL https://raw.githubusercontent.com/topqaz/LiteMark/main/deploy.sh -o deploy.sh
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-2. Create a D1 database:
+After choosing `Cloudflare Workers Deployment`, enter the Cloudflare API Token when prompted; enter `docker` at the runtime prompt if Node.js is not installed locally.
+
+You can also deploy manually with local Node.js. First set and verify the Cloudflare API Token:
+
+```bash
+export CLOUDFLARE_API_TOKEN=your-token
+npm install
+npx wrangler whoami
+```
+
+2. Manually create a D1 database:
 
 ```bash
 npm run cf:d1:create
@@ -87,9 +105,9 @@ The command prints a `database_id`. Copy it into `wrangler.jsonc`:
 ]
 ```
 
-3. Update `JWT_SECRET`, `DEFAULT_ADMIN_USERNAME`, and `DEFAULT_ADMIN_PASSWORD` in `wrangler.jsonc`.
+3. Manually update `JWT_SECRET`, `DEFAULT_ADMIN_USERNAME`, and `DEFAULT_ADMIN_PASSWORD` in `wrangler.jsonc`.
 
-4. Initialize D1 tables and deploy:
+4. Manually initialize D1 tables and deploy:
 
 ```bash
 npm run cf:d1:migrate
