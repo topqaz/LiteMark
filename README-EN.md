@@ -23,6 +23,18 @@ LiteMark is a personal bookmark management application based on **Vue 3 + FastAP
 
 ## Quick Start
 
+### Linux One-Click Deployment Script
+
+The script lets you choose Docker local deployment or independent Cloudflare Workers deployment interactively:
+
+```bash
+# Download the script from GitHub and run it
+curl -fsSL https://raw.githubusercontent.com/topqaz/LiteMark/main/deploy.sh -o deploy.sh
+chmod +x deploy.sh
+./deploy.sh
+```
+
+
 ### Docker Deployment (Recommended)
 
 ```bash
@@ -42,6 +54,56 @@ docker run -d -p 8080:80 \
 # For ARM64 architecture use: topqaz/litemark:arm64
 
 Access address: `http://localhost:8080`, Admin panel: `http://localhost:8080/admin`
+
+### Cloudflare Workers Deployment
+
+Cloudflare Workers deployment is an independent deployment option. It runs the API in a Worker and stores bookmark data in D1, without requiring the local Docker/FastAPI backend. You can choose either Docker local deployment above or Cloudflare Workers deployment.
+
+The Workers version currently supports login, bookmark management, category management, site settings, JSON/CSV/HTML export, JSON/CSV/HTML file import, page-title fetching, OpenAI-compatible AI summarization/classification/quick-add, WebDAV configuration/testing/manual backup/scheduled backup/retention cleanup, basic MCP tool calls, and OAuth Client Credentials. WebDAV scheduled backup is evaluated in Asia/Shanghai time; AI background batch processing is still best handled by the Docker/FastAPI version.
+
+1. Install dependencies and log in to Cloudflare:
+
+```bash
+npm install
+npx wrangler login
+```
+
+2. Create a D1 database:
+
+```bash
+npm run cf:d1:create
+```
+
+The command prints a `database_id`. Copy it into `wrangler.jsonc`:
+
+```jsonc
+"d1_databases": [
+  {
+    "binding": "DB",
+    "database_name": "litemark",
+    "database_id": "paste-it-here",
+    "migrations_dir": "worker/migrations"
+  }
+]
+```
+
+3. Update `JWT_SECRET`, `DEFAULT_ADMIN_USERNAME`, and `DEFAULT_ADMIN_PASSWORD` in `wrangler.jsonc`.
+
+4. Initialize D1 tables and deploy:
+
+```bash
+npm run cf:d1:migrate
+npm run deploy:cloudflare
+```
+
+You can also preview the Worker locally:
+
+```bash
+npm run cf:d1:migrate:local
+npm run preview:cloudflare
+```
+
+After deployment, visit the Cloudflare Workers URL or your custom domain.
 
 ## Updates
 

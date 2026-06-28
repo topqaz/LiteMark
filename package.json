@@ -6,6 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "cf:d1:create": "wrangler d1 create litemark",
+    "cf:d1:migrate:local": "wrangler d1 migrations apply litemark --local",
+    "cf:d1:migrate": "wrangler d1 migrations apply litemark --remote",
+    "deploy:cloudflare": "VITE_API_BASE_URL= npm run build && wrangler deploy",
+    "preview:cloudflare": "VITE_API_BASE_URL= npm run build && wrangler dev",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -20,7 +25,9 @@
     "@types/sortablejs": "^1.15.0",
     "@vitejs/plugin-vue": "^6.0.0",
     "typescript": "^5.6.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "@cloudflare/workers-types": "^4.20260426.1",
+    "wrangler": "^4.0.0"
   },
   "engines": {
     "node": "20.x"

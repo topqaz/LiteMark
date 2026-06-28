@@ -2,6 +2,7 @@
 .idea
 node_modules
 .vercel
+.deploy
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

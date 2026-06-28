@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "litemark",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-06-28",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "triggers": {
+    "crons": [
+      "*/30 * * * *"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "litemark",
+      "database_id": "ae4cb36b-d076-45e7-81d5-5f6f136ce7cd",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "vars": {
+    "JWT_SECRET": "2daa5f01e7bd8e2c5b05b52be3a5ed31ca82e43f794d1a354f565e0837975dc7",
+    "DEFAULT_ADMIN_USERNAME": "admin",
+    "DEFAULT_ADMIN_PASSWORD": "admin123"
+  }
+}

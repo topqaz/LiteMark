@@ -6,8 +6,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "target": "ESNext",
-    "types": ["node"]
+    "types": ["node", "@cloudflare/workers-types"]
   },
-  "include": ["vite.config.ts", "vercel/**/*.ts"]
+  "include": ["vite.config.ts", "vercel/**/*.ts", "worker/**/*.ts"]
 }
-
