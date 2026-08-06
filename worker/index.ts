@@ -32,7 +32,7 @@ interface BookmarkInput {
   tags?: string | null;
 }
 
-const VERSION = '2.1.4';
+const VERSION = '2.1.8';
 const DEFAULT_SETTINGS = {
   theme: 'light',
   siteTitle: 'LiteMark',
